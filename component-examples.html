@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>أمثلة المكوّنات — التصميم الجديد</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>
+  body{padding:24px;max-width:640px;margin:0 auto}
+  h2{font-size:1rem;margin:28px 0 12px;color:var(--text2)}
+</style>
+</head>
+<body data-theme="light">
+
+<h2>1) بطاقة استثمار/شهادة — .fin-card + .item-card-header + .cert-fields</h2>
+<div class="fin-card">
+  <div class="item-card-header">
+    <div>
+      <div class="item-card-title">شهادة بنك مصر ١٨٪</div>
+      <div class="item-card-sub">تُفتح في ١ يناير ٢٠٢٦</div>
+    </div>
+    <span class="badge badge-paid">✓ مضمونة</span>
+  </div>
+
+  <div class="cert-fields">
+    <div class="field-group">
+      <label>المبلغ</label>
+      <div style="font-size:var(--fs-amount);font-weight:var(--fw-amount)">50,000 ج</div>
+    </div>
+    <div class="field-group">
+      <label>العائد الشهري</label>
+      <div style="font-size:var(--fs-amount);font-weight:var(--fw-amount);color:var(--accent2)">750 ج</div>
+    </div>
+    <div class="field-group">
+      <label>الحد الأقصى</label>
+      <div style="font-size:var(--fs-amount);font-weight:var(--fw-amount)">100,000 ج</div>
+    </div>
+  </div>
+
+  <div class="progress-wrap"><div class="progress-bar" style="width:50%;background:var(--accent2)"></div></div>
+
+  <div class="monthly-return">📈 العائد التراكمي حتى الآن: 4,500 ج</div>
+</div>
+
+<h2>2) بطاقة قابلة للطي (فيزا/دين) — .cc-card + .cc-stats الشبكة الفرعية</h2>
+<div class="fin-card cc-card cc-open">
+  <div class="cc-head">
+    <div class="cc-head-main">
+      <div class="cc-title">فيزا CIB بلاتينيوم</div>
+      <div class="cc-sub">تاريخ الاستحقاق: ٢٠ كل شهر</div>
+    </div>
+    <span class="badge badge-pending">⏳ فعّال</span>
+    <div class="cc-chevron">▾</div>
+  </div>
+
+  <div class="cc-stats">
+    <span class="cc-stat">المطلوب: <b>3,200 ج</b></span>
+    <span class="cc-stat">المتبقي: <b style="color:var(--danger)">1,000 ج</b></span>
+    <span class="cc-stat">المتاح: <b style="color:var(--accent2)">6,800 ج</b></span>
+    <span class="cc-stat">🎁 نقاط: <b style="color:#7c3aed">+64 ج</b></span>
+  </div>
+
+  <div class="cc-body cc-body-inner" style="margin-top:12px">
+    <div class="progress-wrap"><div class="progress-bar" style="width:32%;background:var(--accent3)"></div></div>
+  </div>
+</div>
+
+<h2>3) ملخص شهري — .summary-grid / .summary-card (ودجت داشبورد)</h2>
+<div class="summary-grid">
+  <div class="summary-card blue">
+    <div class="summary-label">إجمالي الدخل</div>
+    <div class="summary-value blue">18,400 ج</div>
+    <div class="summary-sub">هذا الشهر</div>
+  </div>
+  <div class="summary-card red">
+    <div class="summary-label">إجمالي المصروفات</div>
+    <div class="summary-value red">11,250 ج</div>
+    <div class="summary-sub">هذا الشهر</div>
+  </div>
+  <div class="summary-card green">
+    <div class="summary-label">الصافي</div>
+    <div class="summary-value green">7,150 ج</div>
+    <div class="summary-sub">مقارنة بالشهر السابق: <span class="val-positive">+12%</span></div>
+  </div>
+</div>
+
+<h2>4) رأس تجميع يومي عائم — .bgt-day-group / .bgt-day-head</h2>
+<div class="bgt-day-group">
+  <div class="bgt-day-head" style="cursor:pointer">
+    <span class="bgt-item-date"><span class="dd-num">14</span><span class="dd-lbl">سبت</span></span>
+    <span style="margin-right:auto;font-size:0.72rem;font-weight:800;color:var(--muted)">420 ج · 3 بنود</span>
+    <span class="bgt-day-chevron" style="transform:rotate(180deg)">▾</span>
+  </div>
+  <div class="bgt-day-body bgt-day-body-open">
+    <div class="bgt-item">
+      <span class="bgt-item-amt">150 ج</span>
+      <div class="bgt-item2-main">
+        <span class="bgt-item-name">مطعم</span>
+        <div class="bgt-item2-meta"><span class="bgt-item-badge" style="background:var(--bg);color:var(--text2)">طعام</span></div>
+      </div>
+    </div>
+    <div class="bgt-item">
+      <span class="bgt-item-amt">270 ج</span>
+      <div class="bgt-item2-main">
+        <span class="bgt-item-name">بنزين</span>
+        <div class="bgt-item2-meta"><span class="bgt-item-badge" style="background:var(--bg);color:var(--text2)">مواصلات</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
