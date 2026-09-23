@@ -5713,25 +5713,34 @@ function toast(msg, flyToBell) {
   }, 2400);
 }
 // ── الإشعار العائم بيطير لمكان جرس المواعيد ويختفي جواه، بدل ما يقف يهبط تحت الشاشة وميختفيش كامل ──
+// ملحوظة: بنحسب هدف الطيران بإحداثيات الشاشة الثابتة (أعلى يمين، فين الجرس دايمًا في كل أحجام الشاشات)
+// بدل ما نعتمد على getBoundingClientRect لزرار الجرس نفسه، لأن على بعض الشاشات الضيقة كان بيرجع
+// أبعاد غلط (العنصر جوه صف بيعمل scroll أفقي) فكان الطيران بيفشل ويرجع الإشعار لمكانه.
 function _toastFlyToBell(t) {
   try {
-    const bell = document.getElementById('dueDropBtn');
-    if (!bell) { t.classList.remove('show'); return; }
     const tRect = t.getBoundingClientRect();
-    const bRect = bell.getBoundingClientRect();
-    const dx = (bRect.left + bRect.width/2) - (tRect.left + tRect.width/2);
-    const dy = (bRect.top + bRect.height/2) - (tRect.top + tRect.height/2);
+    let targetX, targetY;
+    const bell = document.getElementById('dueDropBtn');
+    const bRect = bell ? bell.getBoundingClientRect() : null;
+    if (bRect && bRect.width > 2 && bRect.height > 2) {
+      targetX = bRect.left + bRect.width/2; targetY = bRect.top + bRect.height/2;
+    } else {
+      // احتياطي: الجرس دايمًا في أعلى يمين الهيدر (RTL) — بنطير لنفس المكان تقريبًا حتى لو مقدرناش نلاقي الزرار
+      targetX = window.innerWidth - 40; targetY = 34;
+    }
+    const dx = targetX - (tRect.left + tRect.width/2);
+    const dy = targetY - (tRect.top + tRect.height/2);
     t.style.transform = `translate(${dx}px, ${dy}px) scale(0.12)`;
     t.classList.add('fly-to-bell');
     setTimeout(() => {
       t.classList.remove('show', 'fly-to-bell');
       t.style.transform = ''; t.style.opacity = '';
-      bell.classList.add('bell-shake');
+      if (bell) bell.classList.add('bell-shake');
       const badge = document.getElementById('dueNotifBadge');
       if (badge) badge.classList.add('bell-bump');
-      setTimeout(() => { bell.classList.remove('bell-shake'); if (badge) badge.classList.remove('bell-bump'); }, 550);
+      setTimeout(() => { if (bell) bell.classList.remove('bell-shake'); if (badge) badge.classList.remove('bell-bump'); }, 550);
     }, 520);
-  } catch(e) { t.classList.remove('show'); }
+  } catch(e) { t.classList.remove('show'); t.style.transform = ''; t.style.opacity = ''; }
 }
 
 // qpay functions removed
