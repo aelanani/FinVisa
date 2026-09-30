@@ -606,7 +606,7 @@ function hideGoogleAuthScreen(user) {
 
     </div><!-- end hdrBtnsWrap -->
 
-    <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)">
+    <input type="file" id="importFile" accept=".json,application/json" style="display:none" onchange="importJSON(event)">
   </div>
 
 </div>
@@ -1051,10 +1051,10 @@ document.addEventListener('DOMContentLoaded', () => applyLanguage(APP_LANG));
       </div>
       <div class="section-body" style="padding:14px">
         <div class="sync-bar">
-          <div class="sync-bar-text">📤 صدّر نسخة احتياطية JSON وارفعها على أي جهاز للمزامنة</div>
+          <div class="sync-bar-text">💾 نسخة احتياطية كاملة (JSON) — بتشمل كل التبويبات: الميزانية • الفيزا • المحافظ • الشهادات والصناديق • العروض والنقاط • المديونيات • التذكيرات. صدّرها وارفعها على أي جهاز لاسترجاع كل حاجة زي ما كانت.</div>
           <button class="btn btn-success" onclick="exportJSON()">⬇ تصدير</button>
-          <button class="btn btn-primary" onclick="document.getElementById('importFile2').click()">⬆ استيراد</button>
-          <input type="file" id="importFile2" accept=".json" style="display:none" onchange="importJSON(event)">
+          <button class="btn btn-primary" onclick="askImport('importFile2')">⬆ استيراد</button>
+          <input type="file" id="importFile2" accept=".json,application/json" style="display:none" onchange="importJSON(event)">
         </div>
         <div style="font-size:0.78rem;color:var(--muted);line-height:1.9">
           <p>✅ آخر حفظ: <span id="lastSaveTime">—</span></p>
@@ -3812,7 +3812,8 @@ function renderDebts() {
     const paidAmt = totalDebt - remaining;
     const paidPct = totalDebt > 0 ? Math.min(100, Math.max(0, (paidAmt / totalDebt) * 100)) : 0;
     const color = paidPct > 80 ? '#10b981' : paidPct > 40 ? '#b08040' : '#b85c3a';
-    const instLeft = parseNum(d.installments);
+    // الأقساط المتبقية: القيمة المكتوبة يدويًا لو موجودة، وإلا بتتحسب (المتبقي ÷ القسط)
+    const instLeft = parseNum(d.installments) > 0 ? parseNum(d.installments) : (monthly > 0 && remaining > 0 ? Math.ceil(remaining / monthly - 0.01) : 0);   // -0.01: آخر قسط أصغر من القسط العادي بفرق بسيط (جنيهات) ميتحسبش قسط زيادة
     const isOpen = debtOpenSet.has(i);
 
     const curKey = getCurrentMonthKey();
@@ -3837,7 +3838,7 @@ function renderDebts() {
             <span class="cc-stat">القسط الشهري: <b>${fmt(monthly)}</b></span>
             <span class="cc-stat">المتبقي: <b style="color:${remaining>0?'var(--danger)':'var(--accent2)'}">${fmt(remaining)}</b></span>
           </div>
-          ${totalDebt>0 ? `<div style="margin-top:8px"><div class="progress-wrap"><div class="progress-bar" style="width:${paidPct.toFixed(0)}%;background:${color}"></div></div><div style="font-size:0.65rem;color:var(--muted);margin-top:2px">${paidPct.toFixed(0)}% مسدد${instLeft>0?" | "+instLeft+" قسط متبقي":""}</div></div>` : ""}
+          ${totalDebt>0 ? `<div style="margin-top:8px"><div class="progress-wrap"><div class="progress-bar" style="width:${paidPct.toFixed(0)}%;background:${color}"></div></div><div style="font-size:0.65rem;color:var(--muted);margin-top:2px">${paidPct.toFixed(0)}% مسدد (${fmt(paidAmt)} من ${fmt(totalDebt)})${instLeft>0?" | "+instLeft+" قسط متبقي":""}</div></div>` : ""}
         </div>
         <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex-shrink:0">
           <button class="btn-danger-sm" onclick="event.stopPropagation();deleteDebt(${i})">🗑</button>
@@ -3849,6 +3850,7 @@ function renderDebts() {
           <div class="cc-row"><span class="cc-row-label">البيان</span><input class="cell-input wide" value="${esc(d.name)}" placeholder="اسم القسط" onchange="updateDebt(${i},'name',this.value)"></div>
           <div class="cc-row"><span class="cc-row-label">القسط الشهري</span><input class="cell-input" type="number" lang="en" inputmode="decimal" value="${d.monthly}" placeholder="0" onchange="updateDebt(${i},'monthly',this.value)"></div>
           <div class="cc-row"><span class="cc-row-label">إجمالي المديونية</span><input class="cell-input" type="number" lang="en" inputmode="decimal" value="${d.totalDebt||d.total||''}" placeholder="0" onchange="updateDebt(${i},'totalDebt',this.value)"></div>
+          <div class="cc-row"><span class="cc-row-label">المتبقي الآن</span><input class="cell-input" type="number" lang="en" inputmode="decimal" value="${remaining}" placeholder="0" onchange="updateDebt(${i},'remaining',this.value)"></div>
           <div class="cc-row"><span class="cc-row-label">الأقساط المتبقية</span><input class="cell-input" type="number" lang="en" value="${d.installments}" placeholder="0" onchange="updateDebt(${i},'installments',this.value)" style="max-width:80px"></div>
           <div class="cc-row"><span class="cc-row-label">يوم الاستحقاق</span><input class="cell-input" type="number" lang="en" value="${d.dueDay}" placeholder="يوم" onchange="updateDebt(${i},'dueDay',this.value)" style="max-width:80px"></div>
           <div class="cc-row"><span class="cc-row-label">🔔 التنبيه قبل الاستحقاق بـ</span>
@@ -4195,7 +4197,18 @@ function closeDebtModal() {
 }
 
 function updateDebt(i, field, val) {
-  getData().debts[i][field] = field === 'paid' ? val : val;
+  const d = getData().debts[i];
+  if (field === 'totalDebt') {
+    // تعديل إجمالي المديونية لازم يحرّك المتبقي بنفس الفرق (المسدد بيفضل ثابت) —
+    // من غير كده المتبقي بيفضل قديم وتطلع نسبة سداد غلط (زي 92%)
+    const oldTotal = parseNum(d.totalDebt || d.total);
+    const oldRem = (d.remaining !== undefined && d.remaining !== '') ? parseNum(d.remaining) : oldTotal;
+    const newTotal = parseNum(val);
+    d.remaining = Math.max(0, _r2(oldRem + (newTotal - oldTotal)));
+  } else if (field === 'remaining') {
+    val = Math.max(0, parseNum(val));
+  }
+  d[field] = val;
   autoSave(); renderDebts();
 }
 function deleteDebt(i) {
@@ -5058,29 +5071,263 @@ function autoSave() {
 // ══════════════════════════════════════════
 // EXPORT / IMPORT
 // ══════════════════════════════════════════
-function exportJSON() {
-  try { localStorage.setItem('lastBackupTs', String(Date.now())); } catch(e) {}
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json;charset=utf-8' });
+// ── نسخة احتياطية كاملة (JSON) — ملف واحد بيغطّي كل التبويبات:
+//    الفيزا / الشهادات والصناديق / العروض والنقاط / المديونيات (كلها جوّه state الشهري)
+//    + المحافظ + التذكيرات + الميزانية ──
+const BACKUP_APP_ID = 'mataa-backup';
+const BACKUP_VERSION = 2;
+const _BK_MONTH_RE = /^\d{4}-\d{2}$/;
+const _BK_MONTH_ARRAYS = ['visa', 'certs', 'debts', 'wallets', 'offers', 'funds', 'finishedFunds', 'finishedDebts'];
+
+function _bkIsObj(x) { return !!x && typeof x === 'object' && !Array.isArray(x); }
+function _bkClone(x) { return JSON.parse(JSON.stringify(x)); }
+
+// بيبني كائن النسخة الاحتياطية من الحالة الحالية في الذاكرة
+function buildBackup() {
+  const st = _bkClone(state);
+  delete st.__wallets; delete st.__reminders; delete st.__lastUpdated; // بيانات مزامنة داخلية — بتتحفظ تحت في أماكنها الصحيحة
+  return {
+    app: BACKUP_APP_ID,
+    version: BACKUP_VERSION,
+    exportedAt: new Date().toISOString(),
+    data: {
+      state: st,
+      wallets: _bkClone(globalWallets || []),
+      reminders: _bkClone(customReminders || []),
+      budget: (typeof BG !== 'undefined' && BG.years && BG.years.length)
+        ? _bkClone({ years: BG.years, expCats: BGT_CATS, incCats: BGT_INC_CATS })
+        : null
+    }
+  };
+}
+
+function _bkDownload(obj, filename) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `مصروفات-backup-${currentMonth}.json`;
-  a.click();
-  toast('✅ تم تصدير النسخة الاحتياطية');
+  a.href = url; a.download = filename; a.style.display = 'none';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 1500);
+}
+function _bkStamp() {
+  const n = new Date();
+  return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0');
+}
+
+function _exportJSONNow() {
+  try {
+    if (!Object.keys(state).some(k => _BK_MONTH_RE.test(k))) { toast('⚠️ مفيش بيانات لتصديرها لسه'); return; }
+    const bk = buildBackup();
+    _bkDownload(bk, `mataa-backup-${_bkStamp()}.json`);
+    try { localStorage.setItem('lastBackupTs', String(Date.now())); } catch (e) {}
+    const d = bk.data;
+    toast(`✅ تم تصدير نسخة كاملة (${Object.keys(d.state).filter(k => _BK_MONTH_RE.test(k)).length} شهر • ${d.wallets.length} محفظة • ${d.reminders.length} تذكير${d.budget ? ' • الميزانية' : ''})`);
+  } catch (err) {
+    console.error('export error:', err);
+    toast('❌ حصل خطأ أثناء التصدير');
+  }
+}
+
+
+// ══════════════════════════════════════════
+// نافذة التحذير/الشرح (عربي + English) — بتظهر قبل أي تصدير أو استيراد
+// ══════════════════════════════════════════
+const _BK_INFO = {
+  export: {
+    icon: '💾', tone: 'info',
+    ar: { title: 'حفظ نسخة احتياطية', lead: 'هنحفظ كل بياناتك في ملف واحد على جهازك.',
+      steps: ['دوس على <b>تحميل الملف</b>.', 'الملف هينزل لوحده في مجلد <b>التنزيلات (Downloads)</b>.', 'انسخه في مكان آمن: جوجل درايف، أو ابعته لنفسك على واتساب، أو على فلاشة.'],
+      warn: 'الملف فيه كل أرقام فلوسك. متبعتوش لأي حد.',
+      ok: 'مفيش حاجة هتتغيّر أو تتمسح من التطبيق.', go: 'تحميل الملف', cancel: 'إلغاء' },
+    en: { title: 'Save a backup', lead: 'We will save all your data in one file on your device.',
+      steps: ['Tap <b>Download file</b>.', 'The file downloads by itself into your <b>Downloads</b> folder.', 'Copy it somewhere safe: Google Drive, WhatsApp to yourself, or a USB stick.'],
+      warn: 'The file contains all your money numbers. Do not send it to anyone.',
+      ok: 'Nothing will change or be deleted in the app.', go: 'Download file', cancel: 'Cancel' }
+  },
+  import: {
+    icon: '⚠️', tone: 'danger',
+    ar: { title: 'استرجاع نسخة احتياطية', lead: 'هترجّع بياناتك من ملف كنت حفظته قبل كده.',
+      steps: ['دوس على <b>اختيار الملف</b>.', 'اختار ملف النسخة الاحتياطية (بينتهي بـ <b><bdi dir="ltr">.json</bdi></b>).', 'هتشوف ملخص للي في الملف. دوس <b>موافق</b> عشان تكمّل.', 'هننزّل لك <b>نسخة أمان</b> من بياناتك الحالية أوتوماتيك قبل أي تغيير.'],
+      warn: 'تحذير: بياناتك الحالية هتتمسح وتتحط مكانها بيانات الملف. لو مش متأكد، اعمل تصدير الأول.',
+      ok: '', go: 'اختيار الملف', cancel: 'إلغاء' },
+    en: { title: 'Restore a backup', lead: 'You will bring back your data from a file you saved earlier.',
+      steps: ['Tap <b>Choose file</b>.', 'Pick your backup file (it ends with <b>.json</b>).', 'You will see a summary of what is inside. Tap <b>OK</b> to continue.', 'We will automatically download a <b>safety copy</b> of your current data before changing anything.'],
+      warn: 'Warning: your current data will be erased and replaced by the data in the file. If you are not sure, export first.',
+      ok: '', go: 'Choose file', cancel: 'Cancel' }
+  }
+};
+
+function _bkInfoBlock(o, dir, lang, tone) {
+  const steps = o.steps.map((s, i) => `<li style="margin:5px 0"><span style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;border-radius:50%;background:var(--accent2);color:#fff;font-size:0.72rem;font-weight:800;margin-inline-end:8px">${i + 1}</span>${s}</li>`).join('');
+  const warnBg = tone === 'danger' ? 'rgba(220,38,38,0.12)' : 'rgba(217,119,6,0.13)';
+  const warnBd = tone === 'danger' ? '#dc2626' : '#d97706';
+  return `<div dir="${dir}" lang="${lang}" style="text-align:${dir === 'rtl' ? 'right' : 'left'};font-family:'Cairo',sans-serif">
+    <div style="font-size:1rem;font-weight:800;color:var(--text);margin-bottom:4px">${o.title}</div>
+    <div style="font-size:0.85rem;color:var(--text2);margin-bottom:8px">${o.lead}</div>
+    <ol style="list-style:none;margin:0 0 8px;padding:0;font-size:0.84rem;line-height:1.7;color:var(--text)">${steps}</ol>
+    <div style="background:${warnBg};border:1.5px solid ${warnBd};border-radius:10px;padding:8px 10px;font-size:0.82rem;font-weight:700;color:var(--text);line-height:1.6">⚠️ ${o.warn}</div>
+    ${o.ok ? `<div style="margin-top:6px;font-size:0.8rem;color:var(--accent2);font-weight:700">✅ ${o.ok}</div>` : ''}
+  </div>`;
+}
+
+function closeBackupInfo() {
+  const el = document.getElementById('bkInfoOverlay');
+  if (el) el.remove();
+  document.removeEventListener('keydown', _bkInfoKey);
+}
+function _bkInfoKey(e) { if (e.key === 'Escape') closeBackupInfo(); }
+
+// kind: 'export' | 'import' — onProceed بتتنفّذ لما المستخدم يدوس الزرار الرئيسي
+function showBackupInfo(kind, onProceed) {
+  const cfg = _BK_INFO[kind];
+  closeBackupInfo();
+  const ov = document.createElement('div');
+  ov.id = 'bkInfoOverlay';
+  ov.setAttribute('data-no-i18n', '');           // مايتترجمش أوتوماتيك — النافذة أصلاً بالعربي والإنجليزي
+  ov.setAttribute('role', 'dialog');
+  ov.setAttribute('aria-modal', 'true');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:9600;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:14px;overflow-y:auto';
+  ov.innerHTML = `
+    <div style="background:var(--card);color:var(--text);border-radius:18px;width:100%;max-width:460px;max-height:94vh;overflow-y:auto;box-shadow:0 10px 40px rgba(0,0,0,0.35);padding:18px 16px 16px;border:1px solid var(--border)">
+      <div style="text-align:center;font-size:2.2rem;line-height:1;margin-bottom:10px">${cfg.icon}</div>
+      ${_bkInfoBlock(cfg.ar, 'rtl', 'ar', cfg.tone)}
+      <div style="height:1px;background:var(--border);margin:14px 0"></div>
+      ${_bkInfoBlock(cfg.en, 'ltr', 'en', cfg.tone)}
+      <div style="display:flex;gap:10px;margin-top:16px">
+        <button id="bkInfoCancel" type="button" style="flex:1;padding:12px;background:transparent;color:var(--text);border:2px solid var(--border);border-radius:12px;font-family:'Cairo',sans-serif;font-size:0.9rem;font-weight:800;cursor:pointer">${cfg.ar.cancel} / ${cfg.en.cancel}</button>
+        <button id="bkInfoGo" type="button" style="flex:1.4;padding:12px;background:${cfg.tone === 'danger' ? '#dc2626' : 'var(--accent2)'};color:#fff;border:none;border-radius:12px;font-family:'Cairo',sans-serif;font-size:0.9rem;font-weight:800;cursor:pointer">${cfg.ar.go} / ${cfg.en.go}</button>
+      </div>
+    </div>`;
+  ov.addEventListener('click', e => { if (e.target === ov) closeBackupInfo(); });
+  document.body.appendChild(ov);
+  document.getElementById('bkInfoCancel').onclick = closeBackupInfo;
+  document.getElementById('bkInfoGo').onclick = () => {
+    closeBackupInfo();
+    // لازم يتنفّذ جوه نفس الضغطة عشان المتصفح يسمح بالتحميل/اختيار الملف
+    try { onProceed(); } catch (err) { console.error(err); toast('❌ حصل خطأ'); }
+  };
+  document.addEventListener('keydown', _bkInfoKey);
+  setTimeout(() => { const g = document.getElementById('bkInfoGo'); if (g) g.focus(); }, 30);
+}
+
+// نقاط الدخول العامة (كل الأزرار بتنادي دول)
+function exportJSON() { showBackupInfo('export', _exportJSONNow); }
+function askImport(inputId) {
+  showBackupInfo('import', () => { const el = document.getElementById(inputId || 'importFile'); if (el) el.click(); });
+}
+
+// بيفحص الملف ويرجّعه بشكل موحّد { st, wallets, reminders, budget, full } أو { error }
+function _bkParse(text) {
+  let parsed;
+  try { parsed = JSON.parse(String(text).replace(/^\uFEFF/, '')); }
+  catch (e) { return { error: 'ملف غير صالح — مش JSON سليم' }; }
+  if (!_bkIsObj(parsed)) return { error: 'الملف ده مش نسخة احتياطية من التطبيق' };
+
+  let st, wallets = null, reminders = null, budget = null, full = false;
+  if (parsed.app === BACKUP_APP_ID && _bkIsObj(parsed.data)) {
+    // الصيغة الجديدة (كاملة)
+    full = true;
+    st = parsed.data.state;
+    if (Array.isArray(parsed.data.wallets)) wallets = parsed.data.wallets;
+    if (Array.isArray(parsed.data.reminders)) reminders = parsed.data.reminders;
+    const b = parsed.data.budget;
+    if (_bkIsObj(b) && Array.isArray(b.years) && b.years.length &&
+        b.years.every(y => _bkIsObj(y) && Array.isArray(y.months))) budget = b;
+  } else {
+    // الصيغة القديمة (الحالة الشهرية بس) — لسه بتتقبل للتوافق مع النسخ القديمة
+    st = parsed;
+    if (Array.isArray(parsed.__wallets)) wallets = parsed.__wallets;
+    if (Array.isArray(parsed.__reminders)) reminders = parsed.__reminders;
+  }
+  if (!_bkIsObj(st)) return { error: 'الملف ده مش نسخة احتياطية من التطبيق' };
+
+  const monthKeys = Object.keys(st).filter(k => _BK_MONTH_RE.test(k));
+  const okMonths = monthKeys.filter(k => _bkIsObj(st[k]) && (Array.isArray(st[k].visa) || Array.isArray(st[k].debts) || Array.isArray(st[k].certs)));
+  if (!monthKeys.length || !okMonths.length) return { error: 'الملف ده مش نسخة احتياطية من التطبيق — مفيش بيانات شهور صالحة' };
+
+  // تنضيف: نشيل أي مفتاح شهر بايظ، ونضمن إن كل شهر فيه المصفوفات اللي الشاشات بتعتمد عليها
+  const clean = {};
+  okMonths.forEach(k => {
+    const m = _bkClone(st[k]);
+    _BK_MONTH_ARRAYS.forEach(f => { if (!Array.isArray(m[f])) m[f] = []; });
+    clean[k] = m;
+  });
+  // محافظ/تذكيرات: نقبل بس العناصر اللي فعلاً كائنات
+  if (wallets) wallets = wallets.filter(_bkIsObj);
+  if (reminders) reminders = reminders.filter(_bkIsObj);
+  return { st: clean, wallets, reminders, budget: budget ? _bkClone(budget) : null, full, monthCount: okMonths.length };
 }
 
 function importJSON(e) {
-  const file = e.target.files[0];
+  const input = e.target;
+  const file = input.files && input.files[0];
   if (!file) return;
+  const done = () => { try { input.value = ''; } catch (x) {} };
   const reader = new FileReader();
+  reader.onerror = () => { toast('❌ تعذّرت قراءة الملف'); done(); };
   reader.onload = ev => {
     try {
-      state = JSON.parse(ev.target.result);
-      saveState(); render();
+      const r = _bkParse(ev.target.result);
+      if (r.error) { toast('❌ ' + r.error); return; }
+      const lines = [`📅 ${r.monthCount} شهر (الفيزا / الشهادات والصناديق / العروض / المديونيات)`];
+      lines.push(r.wallets ? `👛 ${r.wallets.length} محفظة` : '👛 المحافظ: هتفضل زي ما هي');
+      lines.push(r.reminders ? `🔔 ${r.reminders.length} تذكير` : '🔔 التذكيرات: هتفضل زي ما هي');
+      lines.push(r.budget ? `💰 الميزانية: ${r.budget.years.length} سنة` : '💰 الميزانية: هتفضل زي ما هي');
+      const en = [`📅 ${r.monthCount} month(s): Visa / Certificates & Funds / Offers / Debts`,
+        r.wallets ? `👛 ${r.wallets.length} wallet(s)` : '👛 Wallets: will stay as they are',
+        r.reminders ? `🔔 ${r.reminders.length} reminder(s)` : '🔔 Reminders: will stay as they are',
+        r.budget ? `💰 Budget: ${r.budget.years.length} year(s)` : '💰 Budget: will stay as it is'];
+      if (!confirm('⚠️ الاستيراد هيستبدل بياناتك الحالية بمحتوى الملف ده:\n\n' + lines.join('\n') +
+        '\n\nهنعمل نسخة أمان تلقائية من بياناتك الحالية (هتتنزّل كملف) قبل ما نكمل.\n\nمتابعة؟' +
+        '\n\n─────────────\n\n⚠️ Import will REPLACE your current data with this file:\n\n' + en.join('\n') +
+        '\n\nA safety copy of your current data will be downloaded automatically first.\n\nContinue?')) return;
+
+      // نسخة أمان تلقائية من الوضع الحالي — لو الملف المستورد غلط، ده خط الرجوع
+      try { _bkDownload(buildBackup(), `mataa-before-import-${_bkStamp()}.json`); }
+      catch (err) { console.warn('safety backup failed:', err); }
+
+      applyBackup(r);
       toast('✅ تم استيراد البيانات بنجاح');
-    } catch(err) { toast('❌ ملف غير صالح'); }
-    e.target.value = '';
+    } catch (err) {
+      console.error('import error:', err);
+      toast('❌ حصل خطأ أثناء تطبيق البيانات المستوردة');
+    } finally { done(); }
   };
   reader.readAsText(file);
+}
+
+// بيطبّق النسخة على كل التبويبات ويحفظها محليًا + Firebase
+function applyBackup(r) {
+  // 1) الاستثمار (فيزا/شهادات/عروض/مديونيات/صناديق)
+  state = r.st;
+  // 2) المحافظ والتذكيرات لازم يتظبطوا قبل saveState لأنها بتضيفهم على نسخة Firebase
+  if (r.wallets) {
+    globalWallets = r.wallets;
+    try { localStorage.setItem(WALLETS_KEY, JSON.stringify(globalWallets)); } catch (e) {}
+  }
+  if (r.reminders) {
+    customReminders = r.reminders;
+    try { localStorage.setItem(REMINDERS_KEY, JSON.stringify(customReminders)); } catch (e) {}
+  }
+  // 3) الشهر الحالي لازم يكون موجود في البيانات الجديدة
+  const keys = Object.keys(state).filter(k => _BK_MONTH_RE.test(k)).sort();
+  const wanted = [localStorage.getItem('activeMonth'), currentMonth].find(k => k && state[k]);
+  currentMonth = wanted || keys[keys.length - 1];
+  try { localStorage.setItem('activeMonth', currentMonth); } catch (e) {}
+  ensureMonth();          // بيكمّل أي حقول ناقصة في الشهر الحالي
+  saveState();
+  // 4) الميزانية
+  if (r.budget) {
+    bgtLoadFromData({ years: r.budget.years, expCats: r.budget.expCats, incCats: r.budget.incCats });
+    bgtSave();
+  }
+  // 5) إعادة رسم كل حاجة
+  render();
+  try { _refreshRemindersUI(); } catch (e) {}
+  try { updateDueNotifBadge(); } catch (e) {}
+  try { if (typeof renderWallets === 'function') renderWallets(); } catch (e) {}
+  try { if (typeof bgtRender === 'function' && BG.years.length) bgtRender(); } catch (e) {}
+  try { if (typeof updateHeaderStats === 'function') updateHeaderStats(); } catch (e) {}
 }
 
 function exportReport() {
@@ -10433,6 +10680,13 @@ ${certsHtml}${fundsHtml}${visaHtml}${debtsHtml}${allMonthsHtml}${bgtHtml}
       data-i18n="export_do_btn">
       ⬇ تصدير الآن
     </button>
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+      <div style="font-size:0.78rem;color:var(--text2);margin-bottom:8px;font-weight:700">💾 نسخة احتياطية كاملة (JSON) — كل التبويبات</div>
+      <div style="display:flex;gap:10px">
+        <button onclick="closeExportModal();exportJSON()" style="flex:1;padding:11px;background:transparent;color:var(--accent2);border:2px solid var(--accent2);border-radius:12px;font-family:'Cairo',sans-serif;font-size:0.88rem;font-weight:800;cursor:pointer">⬇ تصدير نسخة</button>
+        <button onclick="closeExportModal();askImport('importFile')" style="flex:1;padding:11px;background:transparent;color:var(--text);border:2px solid var(--border);border-radius:12px;font-family:'Cairo',sans-serif;font-size:0.88rem;font-weight:800;cursor:pointer">⬆ استيراد نسخة</button>
+      </div>
+    </div>
   </div>
 </div>
 
