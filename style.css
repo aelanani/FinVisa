@@ -2576,3 +2576,87 @@ body { padding-top: var(--sat); }
 .section-header > .chips-bar { min-width: 0; flex: 1 1 0; justify-content: flex-end; }
 @media (min-width: 900px) { .section-header > .chips-bar { flex-wrap: wrap; overflow: visible; } }
 .bgt-insight-warn { margin-top: 8px; padding: 6px 10px; border-radius: 10px; background: #fff7ed; color: #9a3412; border: 1px solid #fed7aa; font-size: 0.74rem; font-weight: 700; line-height: 1.6; }
+
+
+/* ═══════════════════════════════════════════════════════════════
+   كروت المديونيات — تصميم شريطي مريح للعين
+   لون الحالة (--st) هو المتحكم الوحيد: أحمر = لم يسدد، برتقالي = سداد جزئي، أخضر = مسدد.
+   الألوان مبنية على متغيرات الثيم (color-mix) فبتشتغل في كل الثيمات الفاتحة والداكنة.
+   ═══════════════════════════════════════════════════════════════ */
+.debt-card { --st: #ef4444; padding: 14px 16px; border-radius: 12px; border-inline-start: 4px solid var(--st); box-shadow: 0 2px 12px -5px rgba(15,23,42,0.28); }
+.debt-card.debt-st-partial { --st: #f59e0b; }
+.debt-card.debt-st-paid    { --st: #10b981; }
+.debt-card:hover { transform: translateY(-2px); }
+
+.debt-badge { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; padding: 2px 10px; border-radius: 999px; font-size: 0.68rem; font-weight: 700; line-height: 1.7; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  color: color-mix(in srgb, var(--st) 78%, var(--text));
+  background: color-mix(in srgb, var(--st) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--st) 28%, transparent); }
+
+/* الأرقام: المتبقي هو الأبرز */
+.debt-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.debt-fig { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; min-width: 0; }
+.debt-fig span { display: block; font-size: 0.66rem; font-weight: 600; color: var(--muted); }
+.debt-fig b { display: block; margin-top: 1px; font-size: 1rem; font-weight: 700; color: var(--text); letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.debt-fig-main { background: color-mix(in srgb, var(--st) 8%, var(--bg)); border-color: color-mix(in srgb, var(--st) 25%, var(--border)); }
+.debt-fig-main b { font-size: 1.2rem; font-weight: 800; color: color-mix(in srgb, var(--st) 80%, var(--text)); }
+.debt-fig-main b small { font-size: 0.66rem; font-weight: 600; color: var(--muted); }
+
+/* شريط التقدم */
+.debt-progress { height: 6px; margin-top: 12px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--text) 10%, transparent); }
+.debt-progress-bar { height: 100%; border-radius: 999px; background: var(--st); transition: width 0.5s cubic-bezier(0.4,0,0.2,1); }
+.debt-progress-cap { display: flex; justify-content: space-between; gap: 8px; margin-top: 4px; font-size: 0.68rem; font-weight: 600; color: var(--muted); }
+.debt-meta { margin-top: 6px; font-size: 0.7rem; color: var(--muted); }
+
+/* أزرار الإجراءات */
+.debt-actions { display: flex; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border2); }
+.debt-act { flex: 1 1 0; padding: 7px 10px; border-radius: 9px; border: 1px solid var(--border2); background: var(--surface); color: var(--text2); font-family: 'Cairo', sans-serif; font-size: 0.76rem; font-weight: 700; cursor: pointer; white-space: nowrap; transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease; }
+.debt-act:hover { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.debt-act-pay { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.debt-act-del { flex: 0 0 auto; padding: 7px 12px; }
+.debt-act-del:hover { color: var(--danger); border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, var(--surface)); }
+.debt-card .cc-chevron { margin-top: 0; }
+
+@media (max-width: 420px) {
+  .debt-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .debt-fig-main { grid-column: 1 / -1; }
+  .debt-act { font-size: 0.72rem; padding: 7px 6px; }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   تعميم تصميم البطاقات على كل التابات (الفيزا • الشهادات • الصناديق • المحافظ • العروض)
+   القاعدة: كل شيء هنا مقيَّد بكلاس .fin-st اللي بيتضاف من JS (finStyle) — يعني أي عنصر
+   تاني في التطبيق (الجداول، الهيدر، المودالات، الميزانية...) ما بيتأثرش بأي حال.
+   لون الحالة --st: أحمر = مطلوب/متأخر، برتقالي = جزئي، أخضر = مكتمل، أزرق = نشط، رمادي = منتهي.
+   ═══════════════════════════════════════════════════════════════ */
+.fin-st { --st: var(--accent); border-inline-start: 4px solid var(--st); border-radius: 12px; box-shadow: 0 2px 12px -5px rgba(15,23,42,0.28); }
+.fin-st:hover { transform: translateY(-2px); }
+.fin-st.cc-card { padding: 14px 16px; }
+
+/* خانات الأرقام: نفس شكل المديونيات — المبلغ الأول بارز بلون الحالة */
+.fin-st .cc-stat { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; font-size: 0.66rem; font-weight: 600; color: var(--muted); }
+.fin-st .cc-stat b { font-size: 1rem; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+.fin-st .cc-stats .cc-stat:first-child { background: color-mix(in srgb, var(--st) 8%, var(--bg)); border-color: color-mix(in srgb, var(--st) 25%, var(--border)); }
+.fin-st .cc-stats .cc-stat:first-child b { font-size: 1.15rem; font-weight: 800; }
+
+/* شريط تقدم/استهلاك أرفع وأهدى */
+.fin-st .progress-wrap { height: 6px; }
+.fin-st.cc-open .cc-chevron { background: var(--st); }
+
+/* شارة حالة باستيل — بديلة للشارات الملونة الصارخة (الفيزا) */
+.st-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 999px; font-size: 0.68rem; font-weight: 700; line-height: 1.7; white-space: nowrap;
+  color: color-mix(in srgb, var(--st) 78%, var(--text));
+  background: color-mix(in srgb, var(--st) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--st) 28%, transparent); }
+
+/* الموبايل الضيق: الخانات في عمودين والأولى بعرض كامل */
+@media (max-width: 420px) {
+  .fin-st .cc-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fin-st .cc-stats .cc-stat:first-child { grid-column: 1 / -1; }
+}
+
+/* الجداول (المنتهية/التقارير): حواف ناعمة + تظليل صفوف خفيف — مقيَّد بـ .table-wrap بس */
+.table-wrap { border-radius: 12px; }
+.table-wrap tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--text) 2.5%, transparent); }
+.table-wrap tbody tr:hover td { background: color-mix(in srgb, var(--accent) 6%, transparent); }

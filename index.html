@@ -1906,7 +1906,7 @@ function updateDebtSelectBar() {
   const chips = [];
   selectedDebtCards.forEach(i => {
     const d = data[i]; if (!d) return;
-    const rem = (d.remaining !== undefined && d.remaining !== '') ? parseNum(d.remaining) : parseNum(d.totalDebt);
+    const rem = getDebtRemaining(d);
     const monthly = parseNum(d.monthly);
     totalRem += rem;
     totalMonthly += monthly;
@@ -2344,6 +2344,12 @@ function saveState() {
 }
 function getData() { return state[currentMonth]; }
 
+// ── تصميم موحد للكروت: --st (لون الحالة) بيتحكم في الشريط الجانبي فقط، ومحتوى/منطق كل تاب زي ما هو ──
+const FIN_ST = { due: '#ef4444', partial: '#f59e0b', paid: '#10b981', info: 'var(--accent)', mute: 'var(--muted)' };
+function finStyle(div, st) {
+  div.classList.add('fin-st');
+  div.style.setProperty('--st', FIN_ST[st] || st);   // st = اسم حالة أو أي لون CSS
+}
 function ensureMonth() {
   if (!state[currentMonth]) {
     const keys = Object.keys(state).sort();
@@ -2720,9 +2726,9 @@ function renderVisa() {
     const isOpen = visaOpenSet.has(origIdx);
 
     let statusBadge = '';
-    if (row.paid || (paid >= req && req > 0)) statusBadge = '<span style="font-size:0.68rem;background:linear-gradient(135deg,var(--accent2),#15803d);color:#fff;padding:2px 8px;border-radius:5px;font-weight:800;display:inline-flex;align-items:center;gap:4px">✓ مكتمل</span>';
-    else if (paid > 0) statusBadge = '<span style="font-size:0.68rem;background:var(--accent);color:#fff;padding:2px 8px;border-radius:5px;font-weight:800;display:inline-flex;align-items:center;gap:4px;opacity:0.9">◑ جزئي</span>';
-    else statusBadge = '<span style="font-size:0.68rem;background:linear-gradient(135deg,#b08040,#8b6020);color:#fff;padding:2px 8px;border-radius:5px;font-weight:800;display:inline-flex;align-items:center;gap:4px">⏳ معلق</span>';
+    if (row.paid || (paid >= req && req > 0)) statusBadge = '<span class="st-badge" style="--st:#10b981">✓ مكتمل</span>';
+    else if (paid > 0) statusBadge = '<span class="st-badge" style="--st:#f59e0b">◑ جزئي</span>';
+    else statusBadge = '<span class="st-badge" style="--st:#ef4444">⏳ معلق</span>';
 
     // ── عدّاد يوم السداد: كام يوم متبقي، وهل اتأخرنا عليه ──
     const isFullyPaid = row.paid || (paid >= req && req > 0);
@@ -2766,7 +2772,7 @@ function renderVisa() {
     const div = document.createElement('div');
     div.className = 'item-card cc-card' + (isOpen ? ' cc-open' : '');
  div.id = 'visa-card-' + origIdx;
-    div.style.borderTop = `2px solid ${color}`;
+    finStyle(div, isFullyPaid ? 'paid' : (paid > 0 ? 'partial' : (req > 0 ? 'due' : 'mute')));
     div.onclick = (ev) => toggleVisaCard(origIdx, ev);
     div.innerHTML = `
       <div class="cc-head">
@@ -3124,7 +3130,7 @@ function renderCerts() {
     const div = document.createElement('div');
     div.className = 'item-card cc-card' + (isOpen ? ' cc-open' : '');
     div.id = 'cert-card-' + origIdx;
-    div.style.borderTop = `2px solid ${color}`;
+    finStyle(div, color);
     div.onclick = (ev) => toggleCertCard(origIdx, ev);
     div.innerHTML = `
       <div class="cc-head">
@@ -3384,7 +3390,7 @@ function renderFunds() {
 
     const div = document.createElement('div');
     div.className = 'item-card cc-card' + (isOpen ? ' cc-open' : '');
-    div.style.borderTop = '2px solid var(--accent2)';
+    finStyle(div, 'info');
     div.onclick = (ev) => toggleFundCard(i, ev);
     div.innerHTML = `
       <div class="cc-head">
@@ -3637,7 +3643,7 @@ function renderWallets() {
 
     const div = document.createElement('div');
     div.className = 'item-card';
-    div.style.borderTop = `2px solid ${color}`;
+    finStyle(div, color);
     div.innerHTML = `
       <div class="item-card-header" style="margin-bottom:10px">
         <div style="flex:1">
@@ -3758,6 +3764,60 @@ function resetAllWallets() {
 let currentDebtIdx = -1;
 let debtUnpaidFilter = false;
 
+// ══ [FIX] مصدر واحد للحقيقة في حسابات المديونية ══
+// المسدد = paidBase (رصيد افتتاحي/تعديل يدوي) + مجموع كل دفعات payHistory
+// المتبقي = الإجمالي - المسدد   (بيتحسب دايمًا، مبقاش بيعتمد على رقم مخزّن ممكن يبوظ)
+const DEBT_EPS = 0.5; // سماحية جنيه/نص جنيه لكسور آخر قسط
+function _debtSumPayments(d) {
+  return (d.payHistory || []).reduce((s, h) => s + parseNum(h.amount), 0);
+}
+function _debtInitBase(d) {
+  // ترحيل تلقائي للبيانات القديمة: نحفظ المتبقي القديم كما هو بالظبط عن طريق paidBase
+  if (d.paidBase !== undefined) return;
+  const total = parseNum(d.totalDebt || d.total);
+  const rem = (d.remaining !== undefined && d.remaining !== '') ? parseNum(d.remaining) : total;
+  d.paidBase = _r2(total - rem - _debtSumPayments(d));
+}
+function getDebtPaidTotal(d) {
+  _debtInitBase(d);
+  return _r2(_debtSumPayments(d) + parseNum(d.paidBase));
+}
+function getDebtRemaining(d) {
+  const total = parseNum(d.totalDebt || d.total);
+  return Math.max(0, _r2(total - getDebtPaidTotal(d)));
+}
+function recalcDebt(d) {
+  d.remaining = getDebtRemaining(d);
+  const total = parseNum(d.totalDebt || d.total);
+  d.paid = total > 0 && d.remaining <= DEBT_EPS;
+  return d.remaining;
+}
+// هل قسط الشهر ده اتدفع بالكامل؟ (دفعة جزئية أقل من القسط = لسه "لم يسدد")
+function isDebtMonthPaid(d, key) {
+  key = key || getCurrentMonthKey();
+  if (d.paid) return true;
+  const total = parseNum(d.totalDebt || d.total);
+  if (total > 0 && getDebtRemaining(d) <= DEBT_EPS) return true;
+  const paid = parseNum((d.monthlyPaid || {})[key]);
+  if (paid <= 0) return false;
+  const monthly = parseNum(d.monthly);
+  return monthly > 0 ? paid >= monthly - 0.01 : true;
+}
+// إعادة رسم كل الأماكن اللي بتعتمد على المديونيات + الحفظ (localStorage + Firebase)
+function refreshDebtViews() {
+  autoSave();
+  renderDebts();
+  renderFinishedDebts();
+  if (typeof updateDueNotifBadge === 'function') updateDueNotifBadge();
+  if (document.getElementById('dueContent') && typeof renderDueDates === 'function') renderDueDates();
+}
+// لما نمسح عنصر بالـ splice الترقيم بيتزحلق → نظبط التحديد وحالة الفتح
+function _debtIdxRemoved(i) {
+  selectedDebtCards.clear();
+  const shifted = [...debtOpenSet].filter(x => x !== i).map(x => x > i ? x - 1 : x);
+  debtOpenSet.clear(); shifted.forEach(x => debtOpenSet.add(x));
+}
+
 function toggleDebtUnpaidFilter() {
   debtUnpaidFilter = !debtUnpaidFilter;
   const btn = document.getElementById('debtUnpaidBtn');
@@ -3776,8 +3836,8 @@ function toggleDebtUnpaidFilter() {
 }
 
 function addDebt() {
-  getData().debts.push({ name: '', monthly: '', totalDebt: '', remaining: '', installments: '', dueDay: '', paid: false, payHistory: [] });
-  autoSave(); renderDebts();
+  getData().debts.push({ name: '', monthly: '', totalDebt: '', remaining: '', installments: '', dueDay: '', paid: false, payHistory: [], paidBase: 0, monthlyPaid: {} });
+  refreshDebtViews();
 }
 
 function renderDebts() {
@@ -3796,54 +3856,57 @@ function renderDebts() {
     const d = data[i];
     const monthly = parseNum(d.monthly);
     // الأهم: لو d.remaining موجودة (حتى لو صفر)، نستخدمها. لو مش موجودة، نرجع لـ totalDebt
-    const remaining = (d.remaining !== undefined && d.remaining !== '') ? parseNum(d.remaining) : parseNum(d.totalDebt);
+    const remaining = getDebtRemaining(d);   // [FIX] محسوب من الدفعات مش رقم مخزّن
     totalMonthly += monthly;
 
     if (search && !(d.name || '').toLowerCase().includes(search)) return;
 
     // فلتر "لم يسدد": يُظهر بس اللي لم يسددوا قسط الشهر الحالي
-    if (debtUnpaidFilter) {
-      const curKey = getCurrentMonthKey();
-      const paidThisMonth = !!(d.monthlyPaid && d.monthlyPaid[curKey]);
-      if (d.paid || paidThisMonth) return;
-    }
+    if (debtUnpaidFilter && isDebtMonthPaid(d, getCurrentMonthKey())) return;   // [FIX] القسط كامل فقط
     shown++;
     const totalDebt = parseNum(d.totalDebt);
     const paidAmt = totalDebt - remaining;
     const paidPct = totalDebt > 0 ? Math.min(100, Math.max(0, (paidAmt / totalDebt) * 100)) : 0;
-    const color = paidPct > 80 ? '#10b981' : paidPct > 40 ? '#b08040' : '#b85c3a';
-    // الأقساط المتبقية: القيمة المكتوبة يدويًا لو موجودة، وإلا بتتحسب (المتبقي ÷ القسط)
-    const instLeft = parseNum(d.installments) > 0 ? parseNum(d.installments) : (monthly > 0 && remaining > 0 ? Math.ceil(remaining / monthly - 0.01) : 0);   // -0.01: آخر قسط أصغر من القسط العادي بفرق بسيط (جنيهات) ميتحسبش قسط زيادة
     const isOpen = debtOpenSet.has(i);
 
+    // الأقساط المتبقية: القيمة المكتوبة يدويًا لو موجودة، وإلا بتتحسب (المتبقي ÷ القسط)
+    const instLeft = parseNum(d.installments) > 0 ? parseNum(d.installments) : (monthly > 0 && remaining > 0 ? Math.ceil(remaining / monthly - 0.01) : 0);
+
+    // ── حالة الشهر الحالي: مسدد (أخضر) / سداد جزئي (برتقالي) / لم يسدد (أحمر) ──
     const curKey = getCurrentMonthKey();
     const curLabel = getMonthLabel(curKey);
-    const paidThisMonth = (d.monthlyPaid || {})[curKey];
-    const monthBadge = paidThisMonth
-      ? `<span style="display:inline-block;margin-top:4px;font-size:0.65rem;background:var(--surface);color:var(--text2);border:1px solid var(--border);border-radius:10px;padding:1px 8px;font-weight:700">✅ ${curLabel} مسدد</span>`
-      : `<span style="display:inline-block;margin-top:4px;font-size:0.65rem;background:#fdf0ec;color:#b91c1c;border:1px solid #e8b0a0;border-radius:10px;padding:1px 8px;font-weight:700">⏳ ${curLabel} لم يُسدَّد</span>`;
+    const paidThisMonth = isDebtMonthPaid(d, curKey);
+    const paidMonthAmt = parseNum((d.monthlyPaid || {})[curKey]);
+    const st = paidThisMonth ? 'paid' : (paidMonthAmt > 0 ? 'partial' : 'due');
+    const stText = st === 'paid' ? `✅ ${curLabel} مسدد`
+                 : st === 'partial' ? `🟡 ${curLabel}: مسدد ${fmt(paidMonthAmt)} من ${fmt(monthly)}`
+                 : `⏳ ${curLabel} لم يُسدَّد`;
 
     const div = document.createElement('div');
-    div.className = 'item-card cc-card' + (isOpen ? ' cc-open' : '');
+    div.className = 'item-card cc-card debt-card debt-st-' + st + (isOpen ? ' cc-open' : '');
     div.id = 'debt-card-' + i;
-    div.style.borderTop = `2px solid ${color}`;
     div.onclick = (ev) => toggleDebtCard(i, ev);
     div.innerHTML = `
       <div class="cc-head">
         <input type="checkbox" id="debt-sel-head-${i}" ${selectedDebtCards.has(i)?'checked':''} onclick="event.stopPropagation()" onchange="toggleDebtCardSelect(${i})" style="width:18px;height:18px;accent-color:var(--danger);cursor:pointer;flex-shrink:0;margin-left:8px;margin-top:2px" title="تحديد">
         ${_bankBadge(d.name)}<div class="cc-head-main">
           <div class="cc-title">${esc(d.name) || 'بدون اسم'}</div>
-          <div class="cc-sub">${monthBadge}</div>
-          <div class="cc-stats">
-            <span class="cc-stat">القسط الشهري: <b>${fmt(monthly)}</b></span>
-            <span class="cc-stat">المتبقي: <b style="color:${remaining>0?'var(--danger)':'var(--accent2)'}">${fmt(remaining)}</b></span>
-          </div>
-          ${totalDebt>0 ? `<div style="margin-top:8px"><div class="progress-wrap"><div class="progress-bar" style="width:${paidPct.toFixed(0)}%;background:${color}"></div></div><div style="font-size:0.65rem;color:var(--muted);margin-top:2px">${paidPct.toFixed(0)}% مسدد (${fmt(paidAmt)} من ${fmt(totalDebt)})${instLeft>0?" | "+instLeft+" قسط متبقي":""}</div></div>` : ""}
+          <div class="cc-sub"><span class="debt-badge">${stText}</span></div>
         </div>
-        <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex-shrink:0">
-          <button class="btn-danger-sm" onclick="event.stopPropagation();deleteDebt(${i})">🗑</button>
-          <span class="cc-chevron">▼</span>
-        </div>
+        <span class="cc-chevron">▼</span>
+      </div>
+      <div class="debt-figures">
+        <div class="debt-fig debt-fig-main"><span>المتبقي</span><b>${fmt(remaining)}<small> ج.م</small></b></div>
+        <div class="debt-fig"><span>القسط الشهري</span><b>${fmt(monthly)}</b></div>
+        <div class="debt-fig"><span>الإجمالي</span><b>${fmt(totalDebt)}</b></div>
+      </div>
+      ${totalDebt>0 ? `<div class="debt-progress" role="progressbar" aria-valuenow="${paidPct.toFixed(0)}" aria-valuemin="0" aria-valuemax="100"><div class="debt-progress-bar" style="width:${paidPct.toFixed(0)}%"></div></div>
+      <div class="debt-progress-cap"><span>${paidPct.toFixed(0)}% مسدد (${fmt(paidAmt)})</span><span>${instLeft>0 ? instLeft+' قسط متبقي' : ''}</span></div>` : ''}
+      ${d.dueDay ? `<div class="debt-meta">📅 يوم الاستحقاق: ${esc(String(d.dueDay))} من كل شهر</div>` : ''}
+      <div class="debt-actions" onclick="event.stopPropagation()">
+        <button class="debt-act debt-act-pay" onclick="openDebtModal(${i})">💳 سداد جزئي</button>
+        <button class="debt-act" onclick="toggleDebtCard(${i}, event)">✏️ تعديل</button>
+        <button class="debt-act debt-act-del" onclick="deleteDebt(${i})" title="حذف" aria-label="حذف">🗑</button>
       </div>
       <div class="cc-body">
         <div class="cc-body-inner" onclick="event.stopPropagation()">
@@ -3871,7 +3934,6 @@ function renderDebts() {
               ${(typeof BGT_CATS !== 'undefined' ? BGT_CATS : []).map(c => `<option value="${c.k}" ${d.autoBudgetCat===c.k?'selected':''}>${esc(c.n)}</option>`).join('')}
             </select>
           </div>` : ''}
-          <button class="pay-btn" onclick="openDebtModal(${i})" style="background:rgba(37,99,235,0.1);color:var(--accent);border-color:var(--accent);width:100%;padding:8px">💳 سداد جزئي</button>
         </div>
       </div>
     `;
@@ -3923,9 +3985,12 @@ function restoreDebt(i) {
   const dd = getData();
   if (!dd.finishedDebts) return;
   const d = dd.finishedDebts.splice(i, 1)[0];
-  d.paid = false; d.remaining = d.totalDebt;
+  // [FIX] استعادة = المتبقي يرجع للإجمالي، مع الحفاظ على سجل الدفعات، وتصفير حالة الشهور
+  d.paidBase = _r2(-_debtSumPayments(d));
+  d.monthlyPaid = {};
+  recalcDebt(d);
   dd.debts.push(d);
-  autoSave(); renderDebts(); renderFinishedDebts();
+  refreshDebtViews();
   toast('↩ تم استعادة المديونية');
 }
 function deleteFinishedDebt(i) {
@@ -4010,21 +4075,51 @@ function payVisaFull(idxOrArr) {
   updateDueNotifBadge();
   toast(idxs.length > 1 ? `✅ اتسدد ${idxs.length} فيزا بالكامل` : '✅ اتسددت الفيزا بالكامل');
 }
+function _renderDebtMonthStatus(d) {
+  const statusEl = document.getElementById('debtCurrentMonthStatus');
+  if (!statusEl) return;
+  const curKey = getCurrentMonthKey();
+  const curLabel = getMonthLabel(curKey);
+  const monthly = parseNum(d.monthly);
+  const paidAmt = parseNum((d.monthlyPaid || {})[curKey]);
+  if (isDebtMonthPaid(d, curKey)) {
+    statusEl.style.background = 'rgba(16,185,129,0.1)';
+    statusEl.style.borderColor = '#10b981';
+    statusEl.style.color = 'var(--text2)';
+    statusEl.innerHTML = `\u2705 قسط <strong>${curLabel}</strong> مسدد بالكامل (${fmt(paidAmt)} ج.م)`;
+  } else if (paidAmt > 0) {
+    statusEl.style.background = 'rgba(217,119,6,0.08)';
+    statusEl.style.borderColor = '#f0d090';
+    statusEl.style.color = '#92600a';
+    statusEl.innerHTML = `\uD83D\uDFE1 قسط <strong>${curLabel}</strong> مسدد جزئيًا: ${fmt(paidAmt)} من ${fmt(monthly)} ج.م (باقي ${fmt(Math.max(0, monthly - paidAmt))})`;
+  } else {
+    statusEl.style.background = 'rgba(220,38,38,0.07)';
+    statusEl.style.borderColor = '#e8b0a0';
+    statusEl.style.color = '#b91c1c';
+    statusEl.innerHTML = `\u23F3 قسط <strong>${curLabel}</strong> لم يُسدَّد بعد`;
+  }
+}
+function _renderDebtModalInstallments(d) {
+  const installEl = document.getElementById('debtModalInstallments');
+  if (!installEl) return;
+  const inst = parseNum(d.installments);
+  installEl.textContent = inst > 0 ? `الأقساط المتبقية: ${inst} قسط` : '';
+  installEl.style.display = inst > 0 ? '' : 'none';
+}
+
 function openDebtModal(idx) {
   currentDebtIdx = idx;
   _installPayCount = 1;
   const d = getData().debts[idx];
+  const rem = getDebtRemaining(d);   // [FIX] مبقاش بيرجع للإجمالي لما المتبقي = 0
   document.getElementById('debtModalName').textContent = d.name || 'مديونية';
   document.getElementById('debtModalTotal').textContent = fmt(parseNum(d.totalDebt || d.total)) + ' ج.م';
-  const rem = parseNum(d.remaining) || parseNum(d.totalDebt) || parseNum(d.total);
   document.getElementById('debtModalRemaining').textContent = fmt(rem) + ' ج.م';
 
-  // تحديد القسط الشهري الحالي تلقائياً
   const monthly = parseNum(d.monthly);
-  document.getElementById('debtPayInput').value = monthly > 0 ? monthly : '';
-  document.getElementById('debtAfterPay').textContent = fmt(rem) + ' ج.م';
+  const def = monthly > 0 ? (rem > 0 ? Math.min(monthly, rem) : monthly) : '';
+  document.getElementById('debtPayInput').value = def;
 
-  // إعادة أزرار الأقساط
   ['installPayBtn1','installPayBtn2','installPayBtnCustom'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.classList.remove('active');
@@ -4032,145 +4127,128 @@ function openDebtModal(idx) {
   document.getElementById('installPayBtn1').classList.add('active');
   calcDebtPay();
 
-  // عرض الأقساط المتبقية في الموديل
-  const installEl = document.getElementById('debtModalInstallments');
-  if (installEl) {
-    const inst = parseNum(d.installments);
-    installEl.textContent = inst > 0 ? `الأقساط المتبقية: ${inst} قسط` : '';
-    installEl.style.display = inst > 0 ? '' : 'none';
-  }
-
-  // حالة قسط الشهر الحالي
-  const statusEl = document.getElementById('debtCurrentMonthStatus');
-  if (statusEl) {
-    const curKey = getCurrentMonthKey();
-    const curLabel = getMonthLabel(curKey);
-    if (!d.monthlyPaid) d.monthlyPaid = {};
-    const paidThisMonth = d.monthlyPaid[curKey];
-    if (paidThisMonth) {
-      statusEl.style.background = 'rgba(16,185,129,0.1)';
-      statusEl.style.borderColor = '#10b981';
-      statusEl.style.color = 'var(--text2)';
-      statusEl.innerHTML = `\u2705 قسط <strong>${curLabel}</strong> مسدد بالفعل (${fmt(paidThisMonth)} ج.م)`;
-    } else {
-      statusEl.style.background = 'rgba(220,38,38,0.07)';
-      statusEl.style.borderColor = '#e8b0a0';
-      statusEl.style.color = '#b91c1c';
-      statusEl.innerHTML = `\u23F3 قسط <strong>${curLabel}</strong> لم يُسدَّد بعد`;
-    }
-  }
-
+  _renderDebtModalInstallments(d);
+  _renderDebtMonthStatus(d);
   refreshDebtHistory();
   document.getElementById('debtModal').classList.add('open');
 }
 
 function calcDebtPay() {
   const d = getData().debts[currentDebtIdx];
-  const rem = parseNum(d.remaining) || parseNum(d.totalDebt) || 0;
+  if (!d) return;
+  const rem = getDebtRemaining(d);   // [FIX]
   const pay = parseNum(document.getElementById('debtPayInput').value);
   const after = Math.max(0, rem - pay);
   document.getElementById('debtAfterPay').textContent = fmt(after) + ' ج.م';
 }
 
 function confirmDebtPay() {
-  const pay = parseNum(document.getElementById('debtPayInput').value);
+  let pay = parseNum(document.getElementById('debtPayInput').value);
   if (!pay || pay <= 0) { toast('❌ أدخل مبلغ صحيح'); return; }
   const d = getData().debts[currentDebtIdx];
-  const rem = parseNum(d.remaining) || parseNum(d.totalDebt) || 0;
-  const after = Math.max(0, rem - pay);
-  d.remaining = after;
+  if (!d) return;
   if (!d.payHistory) d.payHistory = [];
   if (!d.monthlyPaid) d.monthlyPaid = {};
+  _debtInitBase(d);   // لازم قبل أي تعديل عشان الترحيل يثبّت المتبقي القديم
 
-  // تحديد الشهر الصحيح للتسجيل
-  const curKey = getCurrentMonthKey();
-  const monthly = parseNum(d.monthly);
-
-  // حساب عدد الأقساط المسداة في هذه الدفعة
-  const installsCount = (monthly > 0 && _installPayCount > 0) ? _installPayCount : Math.round(pay / (monthly || pay));
-  const actualCount = Math.max(1, isFinite(installsCount) ? installsCount : 1);
-
-  // تسجيل الأقساط على الشهور المناسبة
-  let registeredMonths = [];
-  for (let k = 0; k < actualCount; k++) {
-    const d2 = new Date();
-    d2.setMonth(d2.getMonth() + k);
-    const mKey = `${d2.getFullYear()}-${String(d2.getMonth()+1).padStart(2,'0')}`;
-    const mLabel = getMonthLabel(mKey);
-    d.monthlyPaid[mKey] = _r2((d.monthlyPaid[mKey] || 0) + (monthly > 0 ? monthly : pay));
-    registeredMonths.push(mLabel);
+  const total = parseNum(d.totalDebt || d.total);
+  const hasTotal = total > 0;
+  const remBefore = getDebtRemaining(d);
+  // ما نسمحش بدفع أكتر من المتبقي
+  if (hasTotal) {
+    if (remBefore <= DEBT_EPS) { toast('✅ المديونية دي مسددة بالكامل'); return; }
+    if (pay > remBefore) pay = remBefore;
   }
 
-  const monthsStr = registeredMonths.join(' + ');
+  const monthly = parseNum(d.monthly);
+  const curKey = getCurrentMonthKey();
+
+  // [FIX] توزيع الدفعة على الشهور بالمبلغ الفعلي: نكمّل الناقص من الشهر الحالي الأول،
+  // وما زاد يروح للشهر اللي بعده... (قبل كده أي مبلغ كان بيسجّل القسط كامل)
+  let left = pay, fullMonths = 0;
+  const touched = [];
+  const now = new Date();
+  for (let k = 0; k < 120 && left > 0.004; k++) {
+    const dt = new Date(now.getFullYear(), now.getMonth() + k, 1);
+    const mKey = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+    const already = parseNum(d.monthlyPaid[mKey]);
+    let put;
+    if (monthly > 0) {
+      const need = monthly - already;
+      if (need <= 0.01) continue;             // الشهر ده مكتمل، كمّل على اللي بعده
+      put = Math.min(left, need);
+    } else {
+      put = left;                              // مفيش قسط شهري محدد → كله على الشهر الحالي
+    }
+    d.monthlyPaid[mKey] = _r2(already + put);
+    left = _r2(left - put);
+    touched.push(getMonthLabel(mKey));
+    if (monthly > 0 && already < monthly - 0.01 && already + put >= monthly - 0.01) fullMonths++;
+  }
+  const monthsStr = touched.join(' + ');
+
+  // سجل الدفعة (المصدر الوحيد للمسدد) ثم نعيد حساب المتبقي منه
   d.payHistory.push({
     amount: pay,
     date: new Date().toLocaleDateString(_numLocale()),
     monthKey: curKey,
     monthLabel: monthsStr,
-    installsCount: actualCount,
-    remaining: after
+    installsCount: fullMonths,
+    remaining: 0   // بيتحدّث تحت بعد الحساب
   });
+  const after = recalcDebt(d);
+  d.payHistory[d.payHistory.length - 1].remaining = after;
 
-  // تقليل الأقساط المتبقية
-  if (d.installments && parseNum(d.installments) > 0) {
-    d.installments = Math.max(0, parseNum(d.installments) - actualCount);
+  // تقليل الأقساط المتبقية بعدد الشهور اللي اكتملت فعلاً فقط
+  const hadInstallments = parseNum(d.installments) > 0;
+  if (hadInstallments && fullMonths > 0) {
+    d.installments = Math.max(0, parseNum(d.installments) - fullMonths);
   }
 
-  // إذا وصل الصفر أو انتهت الأقساط → نقله لقائمة المنتهية
-  const installDone = d.installments !== undefined && d.installments !== '' && parseNum(d.installments) === 0;
-  if (after === 0 || installDone) {
+  // انتهاء المديونية: لو ليها إجمالي → لما المتبقي يبقى صفر. لو مالهاش إجمالي → لما الأقساط توصل صفر
+  const installDone = hadInstallments && parseNum(d.installments) === 0;
+  const finished = hasTotal ? after <= DEBT_EPS : installDone;
+
+  if (finished) {
     d.paid = true;
     d.remaining = 0;
     const dd = getData();
     if (!dd.finishedDebts) dd.finishedDebts = [];
-    const finished = JSON.parse(JSON.stringify(d));
-    finished.finishedDate = new Date().toLocaleDateString(_numLocale());
-    dd.finishedDebts.push(finished);
+    const fin = JSON.parse(JSON.stringify(d));
+    fin.finishedDate = new Date().toLocaleDateString(_numLocale());
+    dd.finishedDebts.push(fin);
     dd.debts.splice(currentDebtIdx, 1);
-    autoSave(); renderDebts(); renderFinishedDebts();
-    updateDueNotifBadge();
-    if (document.getElementById('dueContent')) renderDueDates();
+    _debtIdxRemoved(currentDebtIdx);
+    refreshDebtViews();
     closeDebtModal();
     toast('🎉 تم سداد المديونية بالكامل! انتقلت لقائمة المنتهيات');
     return;
   }
 
-  const extraMsg = actualCount > 1 ? ` (${actualCount} أقساط: ${monthsStr})` : ` (${monthsStr})`;
-  toast(`✅ تم سداد ${fmt(pay)} ج.م${extraMsg} | المتبقي: ${fmt(after)} ج.م${d.installments!==''?' | أقساط متبقية: '+d.installments:''}`);
-  autoSave(); renderDebts();
-  updateDueNotifBadge();
-  if (document.getElementById('dueContent')) renderDueDates();
-  document.getElementById('debtModalRemaining').textContent = fmt(after) + ' ج.م';
-  document.getElementById('debtPayInput').value = monthly > 0 ? monthly : '';
-  document.getElementById('debtAfterPay').textContent = fmt(after) + ' ج.م';
+  const extraMsg = fullMonths > 1 ? ` (${fullMonths} أقساط: ${monthsStr})` : ` (${monthsStr})`;
+  toast(`✅ تم سداد ${fmt(pay)} ج.م${extraMsg} | المتبقي: ${fmt(after)} ج.م${d.installments!==''&&d.installments!==undefined?' | أقساط متبقية: '+d.installments:''}`);
+  refreshDebtViews();   // [FIX] حفظ + إعادة رسم فورية (الفلتر والبادج والملخصات والتنبيهات)
 
-  // تحديث حالة الشهر الحالي
-  const statusEl = document.getElementById('debtCurrentMonthStatus');
-  if (statusEl) {
-    const curLabel = getMonthLabel(curKey);
-    const paidAmt = d.monthlyPaid[curKey] || 0;
-    statusEl.style.background = 'rgba(16,185,129,0.1)';
-    statusEl.style.borderColor = '#10b981';
-    statusEl.style.color = 'var(--text2)';
-    statusEl.innerHTML = `\u2705 قسط <strong>${curLabel}</strong> مسدد بالفعل (${fmt(paidAmt)} ج.م)`;
-  }
-  // تحديث عدد الأقساط في الموديل
-  const installEl = document.getElementById('debtModalInstallments');
-  if (installEl) {
-    const inst = parseNum(d.installments);
-    installEl.textContent = inst > 0 ? `الأقساط المتبقية: ${inst} قسط` : '';
-    installEl.style.display = inst > 0 ? '' : 'none';
-  }
+  // تحديث الموديل نفسه
+  const remEl = document.getElementById('debtModalRemaining');
+  if (remEl) remEl.textContent = fmt(after) + ' ج.م';
+  const inEl = document.getElementById('debtPayInput');
+  if (inEl) inEl.value = monthly > 0 ? Math.min(monthly, after) : '';
+  const afterEl = document.getElementById('debtAfterPay');
+  if (afterEl) afterEl.textContent = fmt(after) + ' ج.م';
+  _renderDebtMonthStatus(d);
+  _renderDebtModalInstallments(d);
   refreshDebtHistory();
 }
 
 function resetDebt() {
   if (!confirm('إعادة تعيين المديونية للمبلغ الأصلي؟')) return;
   const d = getData().debts[currentDebtIdx];
-  d.remaining = d.totalDebt;
-  d.paid = false;
   d.payHistory = [];
-  autoSave(); renderDebts();
+  d.paidBase = 0;
+  d.monthlyPaid = {};   // [FIX] قبل كده كانت حالة الشهور بتفضل "مسدد" حتى بعد الريسيت
+  recalcDebt(d);
+  refreshDebtViews();
   closeDebtModal();
   toast('🔄 تم إعادة تعيين المديونية');
 }
@@ -4198,21 +4276,28 @@ function closeDebtModal() {
 
 function updateDebt(i, field, val) {
   const d = getData().debts[i];
-  if (field === 'totalDebt') {
-    // تعديل إجمالي المديونية لازم يحرّك المتبقي بنفس الفرق (المسدد بيفضل ثابت) —
-    // من غير كده المتبقي بيفضل قديم وتطلع نسبة سداد غلط (زي 92%)
-    const oldTotal = parseNum(d.totalDebt || d.total);
-    const oldRem = (d.remaining !== undefined && d.remaining !== '') ? parseNum(d.remaining) : oldTotal;
-    const newTotal = parseNum(val);
-    d.remaining = Math.max(0, _r2(oldRem + (newTotal - oldTotal)));
-  } else if (field === 'remaining') {
-    val = Math.max(0, parseNum(val));
+  if (!d) return;
+  _debtInitBase(d);   // نثبّت المسدد الحالي قبل أي تعديل
+  if (field === 'remaining') {
+    // تعديل يدوي للمتبقي = ضبط رصيد المسدد الافتتاحي بحيث الإجمالي - المسدد = القيمة المكتوبة
+    const want = Math.max(0, parseNum(val));
+    const total = parseNum(d.totalDebt || d.total);
+    d.paidBase = _r2(total - want - _debtSumPayments(d));
+    recalcDebt(d);
+    refreshDebtViews();
+    return;
   }
+  // تعديل الإجمالي: المسدد ثابت والمتبقي يتحرك تلقائيًا (بيتحسب من الفرق)
   d[field] = val;
-  autoSave(); renderDebts();
+  if (field === 'totalDebt') recalcDebt(d);
+  refreshDebtViews();
 }
 function deleteDebt(i) {
-  if (confirm('هل تريد حذف هذا القسط؟')) { getData().debts.splice(i,1); autoSave(); renderDebts(); }
+  if (confirm('هل تريد حذف هذا القسط؟')) {
+    getData().debts.splice(i, 1);
+    _debtIdxRemoved(i);
+    refreshDebtViews();
+  }
 }
 
 // ══════════════════════════════════════════
@@ -4310,7 +4395,7 @@ function renderOffers() {
 
     const div = document.createElement('div');
     div.className = 'item-card cc-card' + (isOpen ? ' cc-open' : '');
-    div.style.borderTop = '2px solid var(--accent3)';
+    finStyle(div, o.redeemed ? 'paid' : (isExpired ? 'mute' : (movTotal > 0 ? 'partial' : 'info')));
     div.onclick = (ev) => toggleOfferCard(i, ev);
     div.innerHTML = `
       <div class="cc-head">
@@ -4642,7 +4727,7 @@ function updateSummary() {
   const [yr, mo] = currentMonth.split('-');
   const walletsTotal = globalWallets.reduce((s,w) => s + parseNum(w.limit), 0);
   const walletsUsed = globalWallets.reduce((s,w) => s + parseNum(w.used), 0);
-  const totalDebtsRemaining = d.debts.reduce((s,dd) => s + (parseNum(dd.remaining)||parseNum(dd.totalDebt)||0), 0);
+  const totalDebtsRemaining = d.debts.reduce((s,dd) => s + getDebtRemaining(dd), 0);
   const fundsPrincipal = (d.funds||[]).reduce((s,f)=>s+parseNum(f.amount),0);
 
   document.getElementById('overviewContent').innerHTML = `
@@ -5352,7 +5437,7 @@ function exportReport() {
   txt += `\n  إجمالي: مطلوب ${fmt(visaReq)} | مسدد ${fmt(visaPaid)} | متبقي ${fmt(visaReq-visaPaid)}\n`;
   txt += `\n📋 المديونيات:\n`;
   d.debts.forEach(dd => {
-    txt += `  • ${dd.name}: قسط ${fmt(parseNum(dd.monthly))} | متبقي ${fmt(parseNum(dd.remaining)||parseNum(dd.totalDebt))} ج.م ${dd.paid?'✓':''}\n`;
+    txt += `  • ${dd.name}: قسط ${fmt(parseNum(dd.monthly))} | متبقي ${fmt(getDebtRemaining(dd))} ج.م ${dd.paid?'✓':''}\n`;
   });
   txt += `\n🏦 الشهادات والصناديق - الشهادات:\n`;
   d.certs.forEach(c => {
@@ -5429,7 +5514,7 @@ function exportCSV() {
   rows.push(['📋 المديونيات والأقساط']);
   rows.push(['البيان','القسط الشهري','إجمالي المديونية','المتبقي','يوم','سُدد؟']);
   d.debts.forEach(dd => {
-    rows.push([dd.name, parseNum(dd.monthly), parseNum(dd.totalDebt), parseNum(dd.remaining)||parseNum(dd.totalDebt), dd.dueDay||'', dd.paid?'نعم':'لا']);
+    rows.push([dd.name, parseNum(dd.monthly), parseNum(dd.totalDebt), getDebtRemaining(dd), dd.dueDay||'', dd.paid?'نعم':'لا']);
   });
   rows.push([]);
   // المحافظ
@@ -6496,7 +6581,7 @@ function renderDueDates() {
     const day = parseInt(dd.dueDay);
     if (!day) return;
     // القسط مسدد لو: مسدد كلياً، أو تم سداد قسط الشهر الحالي
-    const paidThisMonth = !!(dd.monthlyPaid && dd.monthlyPaid[curMonthKey]);
+    const paidThisMonth = isDebtMonthPaid(dd, curMonthKey);
     const done = dd.paid || paidThisMonth;
     items.push({ name: dd.name || 'قسط', groupKey: dd.name || 'قسط', type: '📋 قسط', day, amount: parseNum(dd.monthly), done, isIncome:false, debtIdx: dIdx });
   });
@@ -8593,7 +8678,7 @@ function renderDueDropdownContent() {
   d.debts.forEach((dd2, dIdx) => {
     const day = parseInt(dd2.dueDay); if (!day) return;
     const curKey2 = getCurrentMonthKey();
-    const paidThisMonth2 = !!(dd2.monthlyPaid && dd2.monthlyPaid[curKey2]);
+    const paidThisMonth2 = isDebtMonthPaid(dd2, curKey2);
     const done2 = dd2.paid || paidThisMonth2;
     // نفس فكرة الفيزا: نحسب أيام العمل الحقيقية (أحد-خميس) لغاية معاد القسط، وعدد الأيام قابل للتخصيص لكل قسط (1/2/3)
     let dueMonthD = today.getMonth(), dueYearD = today.getFullYear();
@@ -8690,7 +8775,7 @@ function renderDueDropdownContent() {
       if (it.type === '📋 قسط' && it.debtIdxs && it.debtIdxs.length > 1) {
         return it.debtIdxs.map(di => {
           const dd2 = d.debts[di]; if (!dd2) return '';
-          const paidThisMonth = !!(dd2.monthlyPaid && dd2.monthlyPaid[curKeyForCertsDrop]);
+          const paidThisMonth = isDebtMonthPaid(dd2, curKeyForCertsDrop);
           const done2 = dd2.paid || paidThisMonth;
           return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed var(--border)">
             <span style="font-size:0.72rem;color:var(--text2);font-weight:700">📋 ${esc(dd2.name || 'قسط')}</span>
@@ -8895,7 +8980,7 @@ function updateDueNotifBadge() {
   d.debts.forEach(dd => {
     const day = parseInt(dd.dueDay); if (!day) return;
     const curKey3 = getCurrentMonthKey();
-    const paidThisMonth3 = !!(dd.monthlyPaid && dd.monthlyPaid[curKey3]);
+    const paidThisMonth3 = isDebtMonthPaid(dd, curKey3);
     const done3 = dd.paid || paidThisMonth3;
     if (!done3) {
       let dueMonthDD = today.getMonth(), dueYearDD = today.getFullYear();
@@ -8980,7 +9065,7 @@ function updateStickyBars() {
     let totalMonthly = 0, totalRemaining = 0;
     d.debts.forEach(dd => {
       totalMonthly += parseNum(dd.monthly);
-      totalRemaining += (dd.remaining !== undefined && dd.remaining !== '') ? parseNum(dd.remaining) : parseNum(dd.totalDebt);
+      totalRemaining += getDebtRemaining(dd);
     });
     const dm = document.getElementById('psb-debts-monthly');
     const dr = document.getElementById('psb-debts-remaining');
