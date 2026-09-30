@@ -3767,6 +3767,13 @@ let debtUnpaidFilter = false;
 // ══ [FIX] مصدر واحد للحقيقة في حسابات المديونية ══
 // المسدد = paidBase (رصيد افتتاحي/تعديل يدوي) + مجموع كل دفعات payHistory
 // المتبقي = الإجمالي - المسدد   (بيتحسب دايمًا، مبقاش بيعتمد على رقم مخزّن ممكن يبوظ)
+// ══ [AUTO] وضع الأقساط التلقائي ══
+// لو القسط الشهري + عدد الأقساط الكلي موجودين: الإجمالي = العدد × القسط، والمتبقي/الأقساط المتبقية/النسبة كلها بتتحسب.
+// المدخلات الوحيدة: القسط الشهري • عدد الأقساط الكلي • عدد الأقساط المدفوعة (+ أي سداد بيتسجل من زر "سداد جزئي").
+function isDebtAuto(d) { return parseNum(d.installmentsTotal) > 0 && parseNum(d.monthly) > 0; }
+function getDebtTotal(d) {
+  return isDebtAuto(d) ? _r2(parseNum(d.installmentsTotal) * parseNum(d.monthly)) : parseNum(d.totalDebt || d.total);
+}
 const DEBT_EPS = 0.5; // سماحية جنيه/نص جنيه لكسور آخر قسط
 function _debtSumPayments(d) {
   return (d.payHistory || []).reduce((s, h) => s + parseNum(h.amount), 0);
@@ -3774,7 +3781,7 @@ function _debtSumPayments(d) {
 function _debtInitBase(d) {
   // ترحيل تلقائي للبيانات القديمة: نحفظ المتبقي القديم كما هو بالظبط عن طريق paidBase
   if (d.paidBase !== undefined) return;
-  const total = parseNum(d.totalDebt || d.total);
+  const total = getDebtTotal(d);
   const rem = (d.remaining !== undefined && d.remaining !== '') ? parseNum(d.remaining) : total;
   d.paidBase = _r2(total - rem - _debtSumPayments(d));
 }
@@ -3783,25 +3790,53 @@ function getDebtPaidTotal(d) {
   return _r2(_debtSumPayments(d) + parseNum(d.paidBase));
 }
 function getDebtRemaining(d) {
-  const total = parseNum(d.totalDebt || d.total);
+  const total = getDebtTotal(d);
   return Math.max(0, _r2(total - getDebtPaidTotal(d)));
 }
 function recalcDebt(d) {
   d.remaining = getDebtRemaining(d);
-  const total = parseNum(d.totalDebt || d.total);
+  const total = getDebtTotal(d);
   d.paid = total > 0 && d.remaining <= DEBT_EPS;
+  if (isDebtAuto(d)) {   // نخلي الحقول المخزّنة متزامنة (بتُقرأ في الملخصات والتصدير والتنبيهات)
+    d.totalDebt = total;
+    d.installments = d.remaining <= DEBT_EPS ? 0 : Math.ceil(d.remaining / parseNum(d.monthly) - 0.01);
+  }
   return d.remaining;
 }
 // هل قسط الشهر ده اتدفع بالكامل؟ (دفعة جزئية أقل من القسط = لسه "لم يسدد")
 function isDebtMonthPaid(d, key) {
   key = key || getCurrentMonthKey();
   if (d.paid) return true;
-  const total = parseNum(d.totalDebt || d.total);
+  const total = getDebtTotal(d);
   if (total > 0 && getDebtRemaining(d) <= DEBT_EPS) return true;
   const paid = parseNum((d.monthlyPaid || {})[key]);
   if (paid <= 0) return false;
   const monthly = parseNum(d.monthly);
   return monthly > 0 ? paid >= monthly - 0.01 : true;
+}
+// هل الأقساط المتبقية × القسط متطابقة مع المتبقي؟ (آخر قسط ممكن يكون أصغر، فالمقبول: (n-1)×القسط < المتبقي ≤ n×القسط)
+function getDebtConsistency(d) {
+  const inst = parseNum(d.installments), m = parseNum(d.monthly);
+  const total = getDebtTotal(d);
+  if (isDebtAuto(d) || inst <= 0 || m <= 0 || total <= 0) return { ok: true };   // في الوضع التلقائي مفيش تعارض بالتصميم
+  const rem = getDebtRemaining(d), exp = _r2(inst * m), tol = Math.max(1, m * 0.01);
+  return { ok: rem <= exp + tol && rem > (inst - 1) * m - tol, exp, rem, inst, m };
+}
+// حل التعارض (1): اعتمد الأقساط → المسدد ثابت، والإجمالي = المسدد + (الأقساط × القسط)
+function debtSyncByInstallments(i) {
+  const d = getData().debts[i]; if (!d) return;
+  _debtInitBase(d);
+  d.totalDebt = _r2(getDebtPaidTotal(d) + parseNum(d.installments) * parseNum(d.monthly));
+  recalcDebt(d); refreshDebtViews();
+  toast('🔗 تمت المزامنة: المتبقي = ' + fmt(getDebtRemaining(d)) + ' ج.م');
+}
+// حل التعارض (2): اعتمد المتبقي → عدد الأقساط = المتبقي ÷ القسط (تقريب لأعلى)
+function debtSyncByRemaining(i) {
+  const d = getData().debts[i]; if (!d) return;
+  const m = parseNum(d.monthly), rem = getDebtRemaining(d);
+  d.installments = m > 0 ? (rem <= DEBT_EPS ? 0 : Math.ceil(rem / m - 0.01)) : d.installments;
+  refreshDebtViews();
+  toast('🔗 تمت المزامنة: ' + d.installments + ' قسط متبقي');
 }
 // إعادة رسم كل الأماكن اللي بتعتمد على المديونيات + الحفظ (localStorage + Firebase)
 function refreshDebtViews() {
@@ -3864,13 +3899,14 @@ function renderDebts() {
     // فلتر "لم يسدد": يُظهر بس اللي لم يسددوا قسط الشهر الحالي
     if (debtUnpaidFilter && isDebtMonthPaid(d, getCurrentMonthKey())) return;   // [FIX] القسط كامل فقط
     shown++;
-    const totalDebt = parseNum(d.totalDebt);
-    const paidAmt = totalDebt - remaining;
+    const totalDebt = getDebtTotal(d);
+    const paidAmt = _r2(totalDebt - remaining);
     const paidPct = totalDebt > 0 ? Math.min(100, Math.max(0, (paidAmt / totalDebt) * 100)) : 0;
     const isOpen = debtOpenSet.has(i);
 
     // الأقساط المتبقية: القيمة المكتوبة يدويًا لو موجودة، وإلا بتتحسب (المتبقي ÷ القسط)
-    const instLeft = parseNum(d.installments) > 0 ? parseNum(d.installments) : (monthly > 0 && remaining > 0 ? Math.ceil(remaining / monthly - 0.01) : 0);
+    const auto = isDebtAuto(d);
+    const instLeft = auto ? (remaining <= DEBT_EPS ? 0 : Math.ceil(remaining / monthly - 0.01)) : parseNum(d.installments) > 0 ? parseNum(d.installments) : (monthly > 0 && remaining > 0 ? Math.ceil(remaining / monthly - 0.01) : 0);
 
     // ── حالة الشهر الحالي: مسدد (أخضر) / سداد جزئي (برتقالي) / لم يسدد (أحمر) ──
     const curKey = getCurrentMonthKey();
@@ -3881,6 +3917,16 @@ function renderDebts() {
     const stText = st === 'paid' ? `✅ ${curLabel} مسدد`
                  : st === 'partial' ? `🟡 ${curLabel}: مسدد ${fmt(paidMonthAmt)} من ${fmt(monthly)}`
                  : `⏳ ${curLabel} لم يُسدَّد`;
+
+    const paidCnt = auto ? Math.min(parseNum(d.installmentsTotal), Math.floor(getDebtPaidTotal(d) / monthly + 0.0001)) : '';
+    const loan = parseNum(d.loanAmount);
+    const hintHtml = auto && loan > 0 && totalDebt > loan
+      ? `<div class="debt-hint debt-f-full">💡 هتدفع في المجمل <b>${fmt(totalDebt)}</b> مقابل قرض <b>${fmt(loan)}</b> ← فوائد ورسوم <b>${fmt(_r2(totalDebt - loan))}</b></div>` : '';
+    const cons = getDebtConsistency(d);
+    const warnHtml = cons.ok ? '' : `<div class="debt-warn" onclick="event.stopPropagation()">
+        <div>⚠️ تعارض: المتبقي <b>${fmt(cons.rem)}</b> لكن ${fmt(cons.inst)} قسط × ${fmt(cons.m)} = <b>${fmt(cons.exp)}</b></div>
+        <div class="debt-warn-btns"><button onclick="debtSyncByInstallments(${i})">اعتمد الأقساط</button><button onclick="debtSyncByRemaining(${i})">اعتمد المتبقي</button></div>
+      </div>`;
 
     const div = document.createElement('div');
     div.className = 'item-card cc-card debt-card debt-st-' + st + (isOpen ? ' cc-open' : '');
@@ -3903,6 +3949,7 @@ function renderDebts() {
       ${totalDebt>0 ? `<div class="debt-progress" role="progressbar" aria-valuenow="${paidPct.toFixed(0)}" aria-valuemin="0" aria-valuemax="100"><div class="debt-progress-bar" style="width:${paidPct.toFixed(0)}%"></div></div>
       <div class="debt-progress-cap"><span>${paidPct.toFixed(0)}% مسدد (${fmt(paidAmt)})</span><span>${instLeft>0 ? instLeft+' قسط متبقي' : ''}</span></div>` : ''}
       ${d.dueDay ? `<div class="debt-meta">📅 يوم الاستحقاق: ${esc(String(d.dueDay))} من كل شهر</div>` : ''}
+      ${warnHtml}
       <div class="debt-actions" onclick="event.stopPropagation()">
         <button class="debt-act debt-act-pay" onclick="openDebtModal(${i})">💳 سداد جزئي</button>
         <button class="debt-act" onclick="toggleDebtCard(${i}, event)">✏️ تعديل</button>
@@ -3910,18 +3957,25 @@ function renderDebts() {
       </div>
       <div class="cc-body">
         <div class="cc-body-inner" onclick="event.stopPropagation()">
-          <div class="cc-row"><span class="cc-row-label">البيان</span><input class="cell-input wide" value="${esc(d.name)}" placeholder="اسم القسط" onchange="updateDebt(${i},'name',this.value)"></div>
-          <div class="cc-row"><span class="cc-row-label">القسط الشهري</span><input class="cell-input" type="number" lang="en" inputmode="decimal" value="${d.monthly}" placeholder="0" onchange="updateDebt(${i},'monthly',this.value)"></div>
-          <div class="cc-row"><span class="cc-row-label">إجمالي المديونية</span><input class="cell-input" type="number" lang="en" inputmode="decimal" value="${d.totalDebt||d.total||''}" placeholder="0" onchange="updateDebt(${i},'totalDebt',this.value)"></div>
-          <div class="cc-row"><span class="cc-row-label">المتبقي الآن</span><input class="cell-input" type="number" lang="en" inputmode="decimal" value="${remaining}" placeholder="0" onchange="updateDebt(${i},'remaining',this.value)"></div>
-          <div class="cc-row"><span class="cc-row-label">الأقساط المتبقية</span><input class="cell-input" type="number" lang="en" value="${d.installments}" placeholder="0" onchange="updateDebt(${i},'installments',this.value)" style="max-width:80px"></div>
-          <div class="cc-row"><span class="cc-row-label">يوم الاستحقاق</span><input class="cell-input" type="number" lang="en" value="${d.dueDay}" placeholder="يوم" onchange="updateDebt(${i},'dueDay',this.value)" style="max-width:80px"></div>
-          <div class="cc-row"><span class="cc-row-label">🔔 التنبيه قبل الاستحقاق بـ</span>
-            <select class="cell-input" onchange="updateDebt(${i},'alertDays',parseInt(this.value))" style="max-width:130px">
-              <option value="1" ${(parseInt(d.alertDays)||3)===1?'selected':''}>يوم عمل واحد</option>
-              <option value="2" ${(parseInt(d.alertDays)||3)===2?'selected':''}>يومين عمل</option>
-              <option value="3" ${(parseInt(d.alertDays)||3)===3?'selected':''}>3 أيام عمل</option>
-            </select>
+          <div class="debt-form">
+            <label class="debt-f debt-f-full"><span>البيان</span><input class="cell-input" value="${esc(d.name)}" placeholder="اسم القسط" onchange="updateDebt(${i},'name',this.value)"></label>
+            <label class="debt-f"><span>القسط الشهري</span><input class="cell-input" type="number" lang="en" inputmode="decimal" value="${d.monthly}" placeholder="0" onchange="updateDebt(${i},'monthly',this.value)"></label>
+            <label class="debt-f"><span>عدد الأقساط الكلي</span><input class="cell-input" type="number" lang="en" inputmode="numeric" value="${d.installmentsTotal||''}" placeholder="مثال: 84" onchange="updateDebt(${i},'installmentsTotal',this.value)"></label>
+            <label class="debt-f"><span>أقساط مدفوعة</span><input class="cell-input" type="number" lang="en" inputmode="numeric" value="${paidCnt}" ${auto?'':'disabled'} placeholder="${auto?'0':'حدد العدد الكلي'}" onchange="updateDebt(${i},'installmentsPaid',this.value)"></label>
+            <label class="debt-f"><span>أصل القرض (اختياري)</span><input class="cell-input" type="number" lang="en" inputmode="decimal" value="${d.loanAmount||''}" placeholder="0" onchange="updateDebt(${i},'loanAmount',this.value)"></label>
+            ${hintHtml}
+            <label class="debt-f"><span>إجمالي المديونية${auto?' · تلقائي':''}</span><input class="cell-input" type="number" lang="en" inputmode="decimal" value="${totalDebt||''}" ${auto?'readonly':''} placeholder="0" onchange="updateDebt(${i},'totalDebt',this.value)"></label>
+            <label class="debt-f"><span>المسدد${auto?' · تلقائي':''}</span><input class="cell-input" type="number" lang="en" inputmode="decimal" value="${getDebtPaidTotal(d)}" ${auto?'readonly':''} placeholder="0" onchange="updateDebt(${i},'paidTotal',this.value)"></label>
+            <label class="debt-f"><span>المتبقي الآن · تلقائي</span><input class="cell-input" type="number" lang="en" value="${remaining}" readonly></label>
+            <label class="debt-f"><span>الأقساط المتبقية${auto?' · تلقائي':''}</span><input class="cell-input" type="number" lang="en" inputmode="numeric" value="${auto?instLeft:d.installments}" ${auto?'readonly':''} placeholder="0" onchange="updateDebt(${i},'installments',this.value)"></label>
+            <label class="debt-f"><span>يوم الاستحقاق</span><input class="cell-input" type="number" lang="en" inputmode="numeric" value="${d.dueDay}" placeholder="يوم" onchange="updateDebt(${i},'dueDay',this.value)"></label>
+            <label class="debt-f debt-f-full"><span>🔔 التنبيه قبل الاستحقاق</span>
+              <select class="cell-input" onchange="updateDebt(${i},'alertDays',parseInt(this.value))">
+                <option value="1" ${(parseInt(d.alertDays)||3)===1?'selected':''}>يوم عمل واحد</option>
+                <option value="2" ${(parseInt(d.alertDays)||3)===2?'selected':''}>يومين عمل</option>
+                <option value="3" ${(parseInt(d.alertDays)||3)===3?'selected':''}>3 أيام عمل</option>
+              </select>
+            </label>
           </div>
           <div class="cc-row" style="align-items:center">
             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;flex:1">
@@ -4113,7 +4167,7 @@ function openDebtModal(idx) {
   const d = getData().debts[idx];
   const rem = getDebtRemaining(d);   // [FIX] مبقاش بيرجع للإجمالي لما المتبقي = 0
   document.getElementById('debtModalName').textContent = d.name || 'مديونية';
-  document.getElementById('debtModalTotal').textContent = fmt(parseNum(d.totalDebt || d.total)) + ' ج.م';
+  document.getElementById('debtModalTotal').textContent = fmt(getDebtTotal(d)) + ' ج.م';
   document.getElementById('debtModalRemaining').textContent = fmt(rem) + ' ج.م';
 
   const monthly = parseNum(d.monthly);
@@ -4151,7 +4205,7 @@ function confirmDebtPay() {
   if (!d.monthlyPaid) d.monthlyPaid = {};
   _debtInitBase(d);   // لازم قبل أي تعديل عشان الترحيل يثبّت المتبقي القديم
 
-  const total = parseNum(d.totalDebt || d.total);
+  const total = getDebtTotal(d);
   const hasTotal = total > 0;
   const remBefore = getDebtRemaining(d);
   // ما نسمحش بدفع أكتر من المتبقي
@@ -4162,6 +4216,7 @@ function confirmDebtPay() {
 
   const monthly = parseNum(d.monthly);
   const curKey = getCurrentMonthKey();
+  const _wasConsistent = getDebtConsistency(d).ok;   // قبل الدفع: هل الأقساط متطابقة مع المتبقي؟
 
   // [FIX] توزيع الدفعة على الشهور بالمبلغ الفعلي: نكمّل الناقص من الشهر الحالي الأول،
   // وما زاد يروح للشهر اللي بعده... (قبل كده أي مبلغ كان بيسجّل القسط كامل)
@@ -4201,8 +4256,13 @@ function confirmDebtPay() {
 
   // تقليل الأقساط المتبقية بعدد الشهور اللي اكتملت فعلاً فقط
   const hadInstallments = parseNum(d.installments) > 0;
-  if (hadInstallments && fullMonths > 0) {
-    d.installments = Math.max(0, parseNum(d.installments) - fullMonths);
+  if (hadInstallments && !isDebtAuto(d)) {
+    if (_wasConsistent && monthly > 0) {
+      // مربوطة تمامًا: الأقساط المتبقية = المتبقي ÷ القسط (بيتحدث حتى مع الدفع الجزئي)
+      d.installments = after <= DEBT_EPS ? 0 : Math.max(0, Math.ceil(after / monthly - 0.01));
+    } else if (fullMonths > 0) {
+      d.installments = Math.max(0, parseNum(d.installments) - fullMonths);
+    }
   }
 
   // انتهاء المديونية: لو ليها إجمالي → لما المتبقي يبقى صفر. لو مالهاش إجمالي → لما الأقساط توصل صفر
@@ -4281,15 +4341,39 @@ function updateDebt(i, field, val) {
   if (field === 'remaining') {
     // تعديل يدوي للمتبقي = ضبط رصيد المسدد الافتتاحي بحيث الإجمالي - المسدد = القيمة المكتوبة
     const want = Math.max(0, parseNum(val));
-    const total = parseNum(d.totalDebt || d.total);
+    const total = getDebtTotal(d);
     d.paidBase = _r2(total - want - _debtSumPayments(d));
+    recalcDebt(d);
+    refreshDebtViews();
+    return;
+  }
+  if (field === 'installmentsTotal') {
+    const wasAuto = isDebtAuto(d);
+    const leftBefore = parseNum(d.installments);
+    const n = Math.max(0, Math.floor(parseNum(val)));
+    d.installmentsTotal = n || '';
+    if (!wasAuto && isDebtAuto(d) && leftBefore > 0 && leftBefore <= n) {
+      // أول تفعيل: المدفوع = (الكلي - المتبقي المكتوب قبل كده) × القسط، فأرقامك القديمة متضيعش
+      d.paidBase = _r2((n - leftBefore) * parseNum(d.monthly) - _debtSumPayments(d));
+    }
+    recalcDebt(d); refreshDebtViews(); return;
+  }
+  if (field === 'installmentsPaid') {
+    if (!isDebtAuto(d)) { toast('⚠️ اكتب القسط الشهري وعدد الأقساط الكلي الأول'); refreshDebtViews(); return; }
+    const k = Math.max(0, Math.min(parseNum(d.installmentsTotal), Math.floor(parseNum(val))));
+    d.paidBase = _r2(k * parseNum(d.monthly) - _debtSumPayments(d));   // المسدد = k × القسط
+    recalcDebt(d); refreshDebtViews(); return;
+  }
+  if (field === 'paidTotal') {
+    // تعديل يدوي للمسدد الكلي: paidBase = المسدد المطلوب - مجموع الدفعات المسجلة
+    d.paidBase = _r2(Math.max(0, parseNum(val)) - _debtSumPayments(d));
     recalcDebt(d);
     refreshDebtViews();
     return;
   }
   // تعديل الإجمالي: المسدد ثابت والمتبقي يتحرك تلقائيًا (بيتحسب من الفرق)
   d[field] = val;
-  if (field === 'totalDebt') recalcDebt(d);
+  if (field === 'totalDebt' || field === 'monthly') recalcDebt(d);
   refreshDebtViews();
 }
 function deleteDebt(i) {
