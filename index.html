@@ -2153,6 +2153,10 @@ const REM_I18N = {
     urg_hint: 'اضغط على أي بند للانتقال إليه',
     upcoming_title: 'باقي المواعيد',
     when_overdue: '⚠️ متأخر',
+    when_late: '⚠️ متأخر {d}',
+    fz_tip: 'درجة الإلحاح {p}%',
+    partial_lbl: 'جزئي',
+    no_due_day: '⚠️ {n} قسط بدون يوم استحقاق — مش هتظهر له تنبيهات',
     when_today: '🔴 النهاردة',
     when_tomorrow: 'بكرة',
     when_in2: 'بعد يومين',
@@ -2193,6 +2197,10 @@ const REM_I18N = {
     urg_hint: 'Tap any item to jump to it',
     upcoming_title: 'Other due dates',
     when_overdue: '⚠️ Overdue',
+    when_late: '⚠️ Overdue by {d}',
+    fz_tip: 'Urgency {p}%',
+    partial_lbl: 'partial',
+    no_due_day: '⚠️ {n} installment(s) have no due day — no alerts will show for them',
     when_today: '🔴 Today',
     when_tomorrow: 'Tomorrow',
     when_in2: 'In 2 days',
@@ -3871,7 +3879,7 @@ function toggleDebtUnpaidFilter() {
 }
 
 function addDebt() {
-  getData().debts.push({ name: '', monthly: '', totalDebt: '', remaining: '', installments: '', dueDay: '', paid: false, payHistory: [], paidBase: 0, monthlyPaid: {} });
+  getData().debts.push({ name: '', monthly: '', totalDebt: '', remaining: '', installments: '', dueDay: '', paid: false, payHistory: [], paidBase: 0, monthlyPaid: {}, createdAt: new Date().toISOString() });
   refreshDebtViews();
 }
 
@@ -3971,9 +3979,9 @@ function renderDebts() {
             <label class="debt-f"><span>يوم الاستحقاق</span><input class="cell-input" type="number" lang="en" inputmode="numeric" value="${d.dueDay}" placeholder="يوم" onchange="updateDebt(${i},'dueDay',this.value)"></label>
             <label class="debt-f debt-f-full"><span>🔔 التنبيه قبل الاستحقاق</span>
               <select class="cell-input" onchange="updateDebt(${i},'alertDays',parseInt(this.value))">
-                <option value="1" ${(parseInt(d.alertDays)||3)===1?'selected':''}>يوم عمل واحد</option>
-                <option value="2" ${(parseInt(d.alertDays)||3)===2?'selected':''}>يومين عمل</option>
-                <option value="3" ${(parseInt(d.alertDays)||3)===3?'selected':''}>3 أيام عمل</option>
+                <option value="1" ${debtAlertDays(d)===1?'selected':''}>يوم عمل واحد</option>
+                <option value="2" ${debtAlertDays(d)===2?'selected':''}>يومين عمل</option>
+                <option value="3" ${debtAlertDays(d)===3?'selected':''}>3 أيام عمل</option>
               </select>
             </label>
           </div>
@@ -6607,7 +6615,7 @@ function _groupDueItems(items) {
   items.forEach(it => {
     const key = (it.groupKey || it.name || '').trim();
     const found = groups.find(g =>
-      g.type === it.type && g.day === it.day && g.done === it.done &&
+      g.type === it.type && g.day === it.day && g.done === it.done && g.dueKey === it.dueKey &&
       (it.custom ? g.groupKey === key : (typeof _bgtFuzzySame === 'function' && _bgtFuzzySame(g.groupKey, key)))
     );
     if (found) {
@@ -6660,29 +6668,34 @@ function renderDueDates() {
     // مفتاح التجميع = اسم البنك بس (من غير رقم/كود الشهادة) عشان شهادات نفس البنك تتجمع مع بعض
     items.push({ name: `${c.bank} ${c.num||''}`.trim(), groupKey: (c.bank||'شهادة').trim(), type: '🏦 عائد شهادة', day, amount: monthly, done: received, isIncome:true, certIdx: cIdx });
   });
-  const curMonthKey = getCurrentMonthKey();
   d.debts.forEach((dd, dIdx) => {
-    const day = parseInt(dd.dueDay);
-    if (!day) return;
-    // القسط مسدد لو: مسدد كلياً، أو تم سداد قسط الشهر الحالي
-    const paidThisMonth = isDebtMonthPaid(dd, curMonthKey);
-    const done = dd.paid || paidThisMonth;
-    items.push({ name: dd.name || 'قسط', groupKey: dd.name || 'قسط', type: '📋 قسط', day, amount: parseNum(dd.monthly), done, isIncome:false, debtIdx: dIdx });
+    const nd = getDebtNextDue(dd, today); if (!nd) return;
+    items.push({ name: dd.name || 'قسط', groupKey: dd.name || 'قسط', type: '📋 قسط', day: nd.due.getDate(), amount: nd.amount, done: false, isIncome: false, debtIdx: dIdx,
+      businessDaysUntil: nd.bdays, alertDays: debtAlertDays(dd), exact: true, dueKey: nd.key, daysUntil: nd.daysUntil, overdue: nd.overdue, daysLate: nd.daysLate,
+      weekdayLbl: _weekdayArOf(nd.due), dueLbl: _debtDueLbl(nd) });
   });
   if (!items.length) {
     el.innerHTML = '<div class="empty">لا توجد مواعيد محددة. أضف "يوم الاستحقاق" للبطاقات أو الأقساط.</div>';
     return;
   }
+  const _refP = _alertRef(d);
   items.forEach(it => {
+    if (it.exact) { _applyFz(it, _refP); return; }
     let daysUntil = it.day - todayDay;
-    // القسط/الاستحقاق اتأخر (يومه فات الشهر ده) ولسه مش متسدد → يفضل "متأخر" لحد ما يتسدد فعلاً،
-    // مش بيختفي لمجرد ما نلف على الشهر الجاي
+    // القسط/الاستحقاق اتأخر (يومه فات الشهر ده) ولسه مش متسدد → يفضل "متأخر" لحد ما يتسدد فعلاً
     const overdue = !it.done && it.day < todayDay;
     if (daysUntil < 0) daysUntil += daysInMonth;
     it.daysUntil = it.isYearly ? it.yearlyDaysUntil : daysUntil;
     it.overdue = it.isYearly ? false : overdue;
+    if (it.type === '💳 فيزا' && it.overdue) it.daysLate = todayDay - it.day;
+    if (it.type === '💳 فيزا') {   // بعد ما يوم الاستحقاق فات (متأخر) أيام العمل بتتصفّر
+      it.alertDays = parseInt(((d.visa || [])[it.visaIdx] || {}).alertDays) || 3;
+      it.businessDaysUntil = it.overdue ? 0 : _businessDaysBetween(new Date(today.getFullYear(), today.getMonth(), today.getDate()), new Date(today.getFullYear(), today.getMonth() + (it.day < todayDay ? 1 : 0), it.day));
+    }
+    _applyFz(it, _refP);
   });
   const groupedItems = _groupDueItems(items);
+  groupedItems.forEach(g => _applyFz(g, _refP));
   groupedItems.sort((a,b) => {
     if (a.done !== b.done) return a.done ? 1 : -1;
     if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
@@ -6693,7 +6706,11 @@ function renderDueDates() {
     if (it.done) {
       urgBg = 'var(--surface)'; urgColor = 'var(--accent2)'; whenText = 'تم ✓'; whenBg = 'var(--surface)'; whenColor = 'var(--accent2)';
     } else if (it.overdue) {
-      urgBg = '#fdf0ec'; urgColor = '#922b18'; whenText = '⚠️ متأخر!'; whenBg = '#fdf0ec'; whenColor = '#922b18';
+      urgBg = '#fdf0ec'; urgColor = '#922b18'; whenText = it.daysLate > 0 ? remT('when_late', { d: remDays(it.daysLate) }) : '⚠️ متأخر!'; whenBg = '#fdf0ec'; whenColor = '#922b18';
+    } else if (_isFzType(it.type) && it.fz && (it.fz.level === 'hot' || it.fz.level === 'warn')) {
+      urgBg = '#fdf0ec'; urgColor = '#922b18'; whenText = _bdText(it.businessDaysUntil); whenBg = '#fdf0ec'; whenColor = '#922b18';
+    } else if (_isFzType(it.type) && it.fz && it.fz.level === 'watch') {
+      urgBg = '#fdf5e6'; urgColor = '#8b6020'; whenText = _bdText(it.businessDaysUntil); whenBg = '#fdf5e6'; whenColor = '#8b6020';
     } else if (it.daysUntil === 0) {
       urgBg = '#fdf0ec'; urgColor = '#922b18'; whenText = 'النهاردة!'; whenBg = '#fdf0ec'; whenColor = '#922b18';
     } else if (it.daysUntil <= 3) {
@@ -6722,14 +6739,14 @@ function renderDueDates() {
     }
     return `<div class="due-row">
       <div class="due-day-badge" style="background:${urgBg};color:${urgColor}">
-        <span class="dd-num">${it.day}</span><span class="dd-lbl">${it.yearlyWeekday || dueWeekdayAr(it.day)}</span>
+        <span class="dd-num">${it.day}</span><span class="dd-lbl">${it.yearlyWeekday || it.weekdayLbl || dueWeekdayAr(it.day)}</span>
       </div>
       <div class="due-info">
         <div class="di-name" title="${esc(it.displayName)}" style="white-space:normal;overflow:visible;text-overflow:clip;word-break:break-word;line-height:1.25">${esc(it.displayName)}</div>
-        <div class="di-type">${it.type}</div>
+        <div class="di-type">${it.type}${it.dueLbl ? ' · ' + it.dueLbl : ''}</div>
       </div>
       <div class="due-amount" style="color:${amtColor}">${amtPrefix}${fmt(it.amount)}</div>
-      <div class="due-when" style="display:flex;flex-direction:column;align-items:center;gap:4px"><span style="background:${whenBg};color:${whenColor};padding:2px 8px;border-radius:6px">${whenText}</span>${actionBtn}</div>
+      <div class="due-when" style="display:flex;flex-direction:column;align-items:center;gap:4px"><span title="${_fzTitle(it)}" style="background:${whenBg};color:${whenColor};padding:2px 8px;border-radius:6px">${whenText}</span>${actionBtn}</div>
     </div>`;
   }).join('') + '</div>';
 }
@@ -8724,6 +8741,106 @@ function _businessDaysBetween(fromMidnight, toDate) {
   while (d < toDate) { d.setDate(d.getDate() + 1); if (_isWorkDay(d)) count++; }
   return count;
 }
+// ══════════════════════════════════════════
+// محرك التنبيهات الذكي
+//  (1) getDebtNextDue: القسط القادم الفعلي لكل مديونية (الشهر ده لو لسه ماتسددش وإلا الشهر اللي بعده...) لحد ما المديونية تخلص
+//  (2) fuzzyUrgency: درجة إلحاح 0..1 بالمنطق الضبابي (Takagi–Sugeno) من: أيام العمل المتبقية × حجم القسط نسبةً لالتزاماتك الشهرية
+// ══════════════════════════════════════════
+function debtAlertDays(d) { return parseInt(d && d.alertDays) || 2; }   // الافتراضي: يومين عمل قبل الاستحقاق لكل المديونيات
+function _monthKeyOf(dt) { return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0'); }
+function _weekdayArOf(dt) { return ['أحد','إثنين','ثلاثاء','أربعاء','خميس','جمعة','سبت'][dt.getDay()]; }
+function _dueMonthLbl(key) { const m = parseInt(String(key).split('-')[1]); return (remMonths()[m - 1]) || ''; }
+function _debtDueLbl(nd) {
+  const parts = [];
+  if (nd.nextMonth) parts.push(_dueMonthLbl(nd.key));
+  if (nd.partial) parts.push(remT('partial_lbl'));
+  return parts.join(' · ');
+}
+// أول قسط لسه ماتسددش بالكامل: بيبدأ من الشهر الحالي ويكمّل للشهور اللي بعده (أي شهر اتسدد كامل بيتخطاه — حتى لو دفعت مقدّم)
+function getDebtNextDue(d, today) {
+  today = today || new Date();
+  const day = parseInt(d.dueDay);
+  if (!day || day < 1) return null;
+  if (d.paid) return null;
+  const hasTotal = getDebtTotal(d) > 0;
+  const rem = getDebtRemaining(d);
+  if (hasTotal && rem <= DEBT_EPS) return null;                       // المديونية اتسددت بالكامل → مفيش تنبيهات
+  const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const monthly = parseNum(d.monthly);
+  let created = null;
+  if (d.createdAt) { const c = new Date(d.createdAt); if (!isNaN(c)) created = new Date(c.getFullYear(), c.getMonth(), c.getDate()); }
+  for (let k = 0; k < 36; k++) {
+    const first = new Date(todayMid.getFullYear(), todayMid.getMonth() + k, 1);
+    const dim = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+    const due = new Date(first.getFullYear(), first.getMonth(), Math.min(day, dim));   // يوم 31 في شهر 30 يوم → آخر يوم في الشهر
+    const key = _monthKeyOf(first);
+    if (isDebtMonthPaid(d, key)) continue;
+    if (created && due < created) continue;                            // اتضافت بعد معاد الشهر ده → مش متأخرة
+    const overdue = due < todayMid;
+    const paidPart = parseNum((d.monthlyPaid || {})[key]);
+    let amount = monthly > 0 ? Math.max(0, monthly - paidPart) : 0;
+    if (hasTotal && amount > rem) amount = rem;                        // آخر قسط ممكن يبقى أصغر
+    const daysUntil = Math.round((due - todayMid) / 86400000);
+    return { key, due, overdue, daysLate: overdue ? -daysUntil : 0, daysUntil, bdays: overdue ? 0 : _businessDaysBetween(todayMid, due),
+             amount, nextMonth: key !== _monthKeyOf(todayMid), partial: paidPart > 0 };
+  }
+  return null;
+}
+// إجمالي الالتزامات الشهرية (مرجع لحساب "حجم" القسط)
+function _alertRef(d) {
+  let s = 0;
+  (d.visa || []).forEach(v => { s += parseNum(v.required); });
+  (d.debts || []).forEach(x => { s += parseNum(x.monthly); });
+  return s;
+}
+// تقسيم ضبابي مثلثي (مجموع الدرجات = 1)
+function _fzPartition(x, c) {
+  const n = c.length, m = new Array(n).fill(0);
+  if (x <= c[0]) { m[0] = 1; return m; }
+  if (x >= c[n - 1]) { m[n - 1] = 1; return m; }
+  for (let i = 0; i < n - 1; i++) if (x >= c[i] && x <= c[i + 1]) { const w = (c[i + 1] - x) / (c[i + 1] - c[i]); m[i] = w; m[i + 1] = 1 - w; break; }
+  return m;
+}
+// المدخلات: bdays (أيام عمل متبقية) • amount/ref (حجم القسط) • win (نافذة التنبيه بأيام العمل، الافتراضي 2)
+// القواعد: كل ما الموعد قرب والقسط كبير → الإلحاح أعلى. القسط الكبير بيتنبّه له قبلها بيوم تقريبًا، والصغير في نطاق النافذة بس.
+function fuzzyUrgency(o) {
+  if (o.overdue) return { u: 1, level: 'late' };
+  const T = [0, 1, 2, 3, 4, 6, 9];                 // أيام عمل
+  const S = [0.05, 0.20, 0.45];                    // صغير / متوسط / كبير (نسبة القسط من الالتزامات الشهرية)
+  const C = [                                      // الإلحاح الناتج لكل (حجم × أيام)
+    [1, .85, .62, .35, .20, .10, .05],             // صغير
+    [1, .90, .76, .52, .32, .15, .06],             // متوسط
+    [1, .95, .88, .62, .44, .22, .08]              // كبير
+  ];
+  const win = Math.max(1, Number(o.win) || 2);
+  const t = Math.max(0, Number(o.bdays) || 0) * (2 / win);       // نمطّ المحور حسب نافذة المستخدم
+  const share = o.ref > 0 ? Math.max(0, Number(o.amount) || 0) / o.ref : 0;
+  const mt = _fzPartition(t, T), ms = _fzPartition(share, S);
+  let u = 0;
+  for (let j = 0; j < S.length; j++) for (let i = 0; i < T.length; i++) u += ms[j] * mt[i] * C[j][i];
+  u = Math.round(u * 1000) / 1000;
+  return { u, level: u >= 0.75 ? 'hot' : u >= 0.45 ? 'warn' : u >= 0.25 ? 'watch' : 'calm', share: Math.round(share * 1000) / 1000 };
+}
+function _fzIsAlert(fz) { return !!fz && (fz.level === 'late' || fz.level === 'hot' || fz.level === 'warn'); }
+function _isFzType(t) { return t === '💳 فيزا' || t === '📋 قسط'; }
+function _applyFz(it, ref) {
+  if (!_isFzType(it.type)) return;
+  it.fz = it.done ? { u: 0, level: 'done' } : fuzzyUrgency({ bdays: it.businessDaysUntil, overdue: it.overdue, amount: it.amount, ref, win: it.alertDays || 3 });
+}
+function _bdText(n) {
+  n = Number(n) || 0;
+  if (n <= 0) return remT('when_today');
+  if (APP_LANG === 'en') return n === 1 ? 'In 1 business day' : `In ${n} business days`;
+  if (n === 1) return 'بعد يوم عمل واحد';
+  if (n === 2) return 'بعد يومي عمل';
+  return n <= 10 ? `بعد ${n} أيام عمل` : `بعد ${n} يوم عمل`;
+}
+function _dueChipText(it) {
+  if (it.overdue) return remT('when_late', { d: remDays(Math.max(1, it.daysLate || 1)) });
+  return _bdText(it.businessDaysUntil);
+}
+function _fzTitle(it) { return it.fz && it.fz.level !== 'done' ? remT('fz_tip', { p: Math.round(it.fz.u * 100) }) : ''; }
+
 function renderDueDropdownContent() {
   const d = getData();
   const today = new Date();
@@ -8760,16 +8877,11 @@ function renderDueDropdownContent() {
     items.push({ name: `${c.bank} ${c.num||''}`.trim(), groupKey: (c.bank||'شهادة').trim(), type: '🏦 عائد شهادة', day, amount: monthly, done: received, isIncome: true, certIdx: cIdx });
   });
   d.debts.forEach((dd2, dIdx) => {
-    const day = parseInt(dd2.dueDay); if (!day) return;
-    const curKey2 = getCurrentMonthKey();
-    const paidThisMonth2 = isDebtMonthPaid(dd2, curKey2);
-    const done2 = dd2.paid || paidThisMonth2;
-    // نفس فكرة الفيزا: نحسب أيام العمل الحقيقية (أحد-خميس) لغاية معاد القسط، وعدد الأيام قابل للتخصيص لكل قسط (1/2/3)
-    let dueMonthD = today.getMonth(), dueYearD = today.getFullYear();
-    if (day < todayDay) { dueMonthD += 1; if (dueMonthD > 11) { dueMonthD = 0; dueYearD += 1; } }
-    const businessDaysUntilD = _businessDaysBetween(todayMidnight0, new Date(dueYearD, dueMonthD, day));
-    const alertDays = parseInt(dd2.alertDays) || 3;
-    items.push({ name: dd2.name || 'قسط', groupKey: dd2.name || 'قسط', type: '📋 قسط', day, amount: parseNum(dd2.monthly), done: done2, isIncome: false, debtIdx: dIdx, businessDaysUntil: businessDaysUntilD, alertDays });
+    // القسط القادم الفعلي (الشهر ده أو اللي بعده...) — مش حالة الشهر الحالي بس
+    const nd = getDebtNextDue(dd2, today); if (!nd) return;
+    items.push({ name: dd2.name || 'قسط', groupKey: dd2.name || 'قسط', type: '📋 قسط', day: nd.due.getDate(), amount: nd.amount, done: false, isIncome: false, debtIdx: dIdx,
+      businessDaysUntil: nd.bdays, alertDays: debtAlertDays(dd2), exact: true, dueKey: nd.key, daysUntil: nd.daysUntil, overdue: nd.overdue, daysLate: nd.daysLate,
+      weekdayLbl: _weekdayArOf(nd.due), dueLbl: _debtDueLbl(nd) });
   });
   // دمج التنبيهات الخاصة جوه نفس القايمة (بلون مميز) بدل ما تكون منفصلة في الآخر
   const todayKeyForDrop = _todayKey();
@@ -8817,18 +8929,26 @@ function renderDueDropdownContent() {
   if (!items.length) {
     el.innerHTML = '<div style="text-align:center;padding:18px;color:var(--muted);font-size:0.82rem">لا توجد مواعيد محددة — أضف يوم الاستحقاق للبطاقات والأقساط.</div>';
   } else {
-    items.forEach(it => { let du = it.day - todayDay; const overdue = !it.done && it.day < todayDay; if (du < 0) du += daysInMonth; it.daysUntil = it.custom ? it.daysUntilOverride : (it.isYearly ? it.yearlyDaysUntil : du); it.overdue = it.custom ? it.overdueOverride : (it.isYearly ? false : overdue); });
+    const _ref = _alertRef(d);
+    items.forEach(it => {
+      if (it.exact) { _applyFz(it, _ref); return; }          // الأقساط: التواريخ محسوبة بدقة من getDebtNextDue
+      let du = it.day - todayDay; const overdue = !it.done && it.day < todayDay; if (du < 0) du += daysInMonth;
+      it.daysUntil = it.custom ? it.daysUntilOverride : (it.isYearly ? it.yearlyDaysUntil : du);
+      it.overdue = it.custom ? it.overdueOverride : (it.isYearly ? false : overdue);
+      if (it.type === '💳 فيزا' && it.overdue) it.daysLate = todayDay - it.day;
+      _applyFz(it, _ref);
+    });
     // ── البنود العاجلة: بتتعرض لوحدها بالاسم (من غير تجميع) وفوق كل حاجة ──
-    const _isUrgent = it => !it.done && !it.isYearly && (it.overdue || ((it.type === '💳 فيزا' || it.type === '📋 قسط') ? it.businessDaysUntil <= (it.alertDays || 3) : it.daysUntil === 0));
-    const urgentItems = items.filter(_isUrgent).sort((a, b) => (Number(b.overdue) - Number(a.overdue)) || (a.daysUntil - b.daysUntil));
+    const _isUrgent = it => !it.done && !it.isYearly && (it.overdue || (_isFzType(it.type) ? _fzIsAlert(it.fz) : it.daysUntil === 0));
+    const urgentItems = items.filter(_isUrgent).sort((a, b) => (Number(b.overdue) - Number(a.overdue)) || ((b.fz ? b.fz.u : 0.8) - (a.fz ? a.fz.u : 0.8)) || (a.daysUntil - b.daysUntil));
     const restItems = items.filter(it => !_isUrgent(it));
     const urgentHtml = urgentItems.length ? `<div class="due-urg-box">
       <div class="due-urg-title">${remT('urg_title', { n: urgentItems.length })}</div>
       ${urgentItems.map(it => {
         const kind = it.custom ? 'custom' : it.visaIdx !== undefined ? 'visa' : it.debtIdx !== undefined ? 'debt' : it.certIdx !== undefined ? 'cert' : '';
         const idx = it.custom ? it.customId : (it.visaIdx ?? it.debtIdx ?? it.certIdx);
-        const hot = it.overdue || it.daysUntil <= 0;
-        const sub = it.custom ? it.type : `${it.type} · ${remT('day_lbl', { d: it.day })}${it.amount ? ' · ' + remT('left_lbl', { a: fmt(it.amount) }) : ''}`;
+        const hot = it.overdue || (it.fz ? it.fz.level === 'hot' : it.daysUntil <= 0);
+        const sub = it.custom ? it.type : `${it.type}${it.dueLbl ? ' · ' + it.dueLbl : ''} · ${remT('day_lbl', { d: it.day })}${it.amount ? ' · ' + remT('left_lbl', { a: fmt(it.amount) }) : ''}`;
         let btn = '';
         if (kind === 'visa') btn = `<button class="ur-btn" onclick="event.stopPropagation();payVisaFull([${idx}])">${remT('btn_pay')}</button>`;
         else if (kind === 'debt') btn = `<button class="ur-btn" onclick="event.stopPropagation();closeDueDropdown();openDebtModal(${idx})">${remT('btn_pay')}</button>`;
@@ -8836,12 +8956,13 @@ function renderDueDropdownContent() {
         else if (kind === 'custom') btn = `<button class="ur-btn" onclick="event.stopPropagation();markReminderDoneToday('${idx}')">${remT('btn_done')}</button>`;
         return `<div class="due-urg-row ${hot ? 'hot' : 'warn'}" ${kind ? `onclick="dueJumpTo('${kind}', ${kind === 'custom' ? `'${idx}'` : idx})"` : ''}>
           <div class="ur-main"><div class="ur-name" data-no-i18n>${esc(it.name)}</div><div class="ur-sub">${sub}</div></div>
-          <div class="ur-side"><span class="ur-when">${(it.type === '💳 فيزا' || it.type === '📋 قسط') && !it.overdue ? (it.businessDaysUntil<=0 ? 'النهاردة!' : `بعد ${it.businessDaysUntil} يوم عمل`) : _dueWhenText(it.daysUntil, it.overdue)}</span>${btn}</div>
+          <div class="ur-side"><span class="ur-when" title="${_fzTitle(it)}">${_isFzType(it.type) ? _dueChipText(it) : _dueWhenText(it.daysUntil, it.overdue)}</span>${btn}</div>
         </div>`;
       }).join('')}
       <div class="due-urg-hint">${remT('urg_hint')}</div>
     </div>` : '';
     const groupedItems = _groupDueItems(restItems);
+    groupedItems.forEach(g => _applyFz(g, _ref));   // بعد الدمج: الإلحاح بيتحسب على إجمالي المجموعة
     groupedItems.sort((a,b) => { if(a.done!==b.done) return a.done?1:-1; if(a.overdue!==b.overdue) return a.overdue?-1:1; return a.daysUntil-b.daysUntil; });
     // بيبني تفاصيل البنود اللي اتجمعت مع بعض (زي "الأهلي (2)") — بيوضح كل شهادة/قسط/بطاقة لوحدها جوه المجموعة
     const _dueGroupDetailRows = (it) => {
@@ -8859,11 +8980,11 @@ function renderDueDropdownContent() {
       if (it.type === '📋 قسط' && it.debtIdxs && it.debtIdxs.length > 1) {
         return it.debtIdxs.map(di => {
           const dd2 = d.debts[di]; if (!dd2) return '';
-          const paidThisMonth = isDebtMonthPaid(dd2, curKeyForCertsDrop);
-          const done2 = dd2.paid || paidThisMonth;
+          const _nd = getDebtNextDue(dd2, today);
+          const done2 = !_nd;
           return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed var(--border)">
             <span style="font-size:0.72rem;color:var(--text2);font-weight:700">📋 ${esc(dd2.name || 'قسط')}</span>
-            <span style="font-size:0.72rem;font-weight:800;color:${done2?'var(--muted)':'var(--text)'}">${done2?'✓ مسدد':fmt(parseNum(dd2.monthly))}</span>
+            <span style="font-size:0.72rem;font-weight:800;color:${done2?'var(--muted)':'var(--text)'}">${done2?'✓ مسدد':fmt(_nd ? _nd.amount : 0)}</span>
           </div>`;
         }).join('');
       }
@@ -8890,10 +9011,10 @@ function renderDueDropdownContent() {
       }
       else if(it.done){urgBg='var(--surface)';urgColor='var(--accent2)';whenText='تم ✓';whenBg='var(--surface)';whenColor='var(--accent2)';}
       else if(it.overdue){urgBg='#fdf0ec';urgColor='#922b18';whenText='⚠️ متأخر!';whenBg='#fdf0ec';whenColor='#922b18';}
-      else if((it.type === '💳 فيزا' || it.type === '📋 قسط') && it.businessDaysUntil <= (it.alertDays || 3)){
-        urgBg='#fdf0ec';urgColor='#922b18';
-        whenText = it.businessDaysUntil<=0 ? 'النهاردة!' : `بعد ${it.businessDaysUntil} يوم عمل`;
-        whenBg='#fdf0ec';whenColor='#922b18';
+      else if(_isFzType(it.type) && it.fz && it.fz.level !== 'calm'){
+        const lv = it.fz.level;
+        if (lv === 'hot' || lv === 'warn') { urgBg='#fdf0ec';urgColor='#922b18';whenBg='#fdf0ec';whenColor='#922b18'; whenText=_dueChipText(it); }
+        else { urgBg='#fdf5e6';urgColor='#8b6020';whenBg='#fdf5e6';whenColor='#8b6020'; whenText=_bdText(it.businessDaysUntil); }
       }
       else if(it.daysUntil===0){urgBg='#fdf0ec';urgColor='#922b18';whenText='النهاردة!';whenBg='#fdf0ec';whenColor='#922b18';}
       else if(it.daysUntil<=3){urgBg='#fdf0ec';urgColor='#922b18';whenText=`بعد ${it.daysUntil} يوم`;whenBg='#fdf0ec';whenColor='#922b18';}
@@ -8929,21 +9050,23 @@ function renderDueDropdownContent() {
       const detailHtml = hasDetail ? `<div class="due-group-detail" id="${detailId}" style="display:none;padding:0 4px 4px 4px">${_dueGroupDetailRows(it)}</div>` : '';
       return `<div class="due-group-wrap">
       <div class="due-row" ${hasDetail ? `onclick="toggleDueGroupDetail('${detailId}')" style="cursor:pointer"` : ''}>
-        <div class="due-day-badge" style="background:${urgBg};color:${urgColor}"><span class="dd-num">${it.day}</span><span class="dd-lbl">${it.yearlyWeekday || dueWeekdayAr(it.day)}</span></div>
-        <div class="due-info"><div class="di-name" title="${esc(it.displayName)}" style="white-space:normal;overflow:visible;text-overflow:clip;word-break:break-word;line-height:1.25">${nameHtml}</div><div class="di-type">${it.type}</div></div>
+        <div class="due-day-badge" style="background:${urgBg};color:${urgColor}"><span class="dd-num">${it.day}</span><span class="dd-lbl">${it.yearlyWeekday || it.weekdayLbl || dueWeekdayAr(it.day)}</span></div>
+        <div class="due-info"><div class="di-name" title="${esc(it.displayName)}" style="white-space:normal;overflow:visible;text-overflow:clip;word-break:break-word;line-height:1.25">${nameHtml}</div><div class="di-type">${it.type}${it.dueLbl ? ' · ' + it.dueLbl : ''}</div></div>
         <div class="due-amount" style="color:${amtColor}">${it.custom ? '' : (it.isIncome?'+':'')+fmt(it.amount)}</div>
-        <div class="due-when" style="display:flex;flex-direction:column;align-items:center;gap:4px"><span style="background:${whenBg};color:${whenColor};padding:2px 8px;border-radius:6px">${whenText}</span>${actionBtn}</div>
+        <div class="due-when" style="display:flex;flex-direction:column;align-items:center;gap:4px"><span title="${_fzTitle(it)}" style="background:${whenBg};color:${whenColor};padding:2px 8px;border-radius:6px">${whenText}</span>${actionBtn}</div>
       </div>
       ${detailHtml}
       </div>`;
     }).join('');
+    const _noDue = (d.debts || []).filter(x => !parseInt(x.dueDay) && parseNum(x.monthly) > 0 && !x.paid && !(getDebtTotal(x) > 0 && getDebtRemaining(x) <= DEBT_EPS)).length;
+    if (_noDue) el.insertAdjacentHTML('beforeend', `<div style="margin:8px 4px 2px;padding:7px 10px;border-radius:9px;background:#fdf5e6;color:#8b6020;font-size:0.72rem;font-weight:700">${remT('no_due_day', { n: _noDue })}</div>`);
   }
 }
 // ── وقت الاستحقاق بصياغة مفهومة (بكرة / بعد يومين / بعد N أيام) ──
-function _dueWhenText(du, overdue, isVisa) {
-  if (overdue) return remT('when_overdue');
+function _dueWhenText(du, overdue, isVisa, late) {
+  if (overdue) return late > 0 ? remT('when_late', { d: remDays(late) }) : remT('when_overdue');
   if (du <= 0) return remT('when_today');
-  if (isVisa) return `بعد ${du} يوم عمل`;
+  if (isVisa) return _bdText(du);
   if (du === 1) return remT('when_tomorrow');
   if (du === 2) return remT('when_in2');
   return remT('when_inN', { n: du });
@@ -9020,15 +9143,16 @@ function _requestNotifPermissionOnce() {
 function _maybeLocalNotifyVisaDue(urgentList) {
   try {
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
-    const visaUrgent = urgentList.filter(u => u.isVisa && !u.overdue);
-    if (!visaUrgent.length) return;
+    const due = urgentList.filter(u => u.isVisa);   // فيزا + أقساط (متأخر أو في نطاق الإلحاح)
+    if (!due.length) return;
     const todayKeyN = _todayKey();
     const sentKey = '_visaNotifSent_' + todayKeyN;
     let sentSet;
     try { sentSet = JSON.parse(localStorage.getItem(sentKey) || '[]'); } catch(e) { sentSet = []; }
-    visaUrgent.forEach(u => {
+    due.forEach(u => {
       if (sentSet.includes(u.name)) return;
-      const body = u.du <= 0 ? `معاد سداد "${u.name}" النهاردة` : `باقي ${u.du} يوم عمل على معاد سداد "${u.name}"`;
+      const body = u.overdue ? `"${u.name}" متأخر ${u.late > 0 ? u.late + ' يوم' : ''} — سدّده في أقرب وقت`
+        : u.du <= 0 ? `معاد سداد "${u.name}" النهاردة` : `باقي ${u.du} يوم عمل على معاد سداد "${u.name}"`;
       try {
         new Notification('💳 تذكير سداد — Mata\u2019a', { body, icon: 'icon-192.png', badge: 'icon-192.png', dir: 'rtl', lang: 'ar' });
       } catch(e) {}
@@ -9050,44 +9174,40 @@ function updateDueNotifBadge() {
   let urgentCount = 0;
   const urgentList = [];
   const items = [];
+const _refB = _alertRef(d);
   d.visa.forEach(v => {
     const day = parseInt(v.dueDay); if (!day) return;
     const req = parseNum(v.required), paid = parseNum(v.paidAmount);
     const done = v.paid || (req > 0 && paid >= req);
     if (!done && req > 0) {
-      let dueMonth = today.getMonth(), dueYear = today.getFullYear();
-      if (day < todayDay) { dueMonth += 1; if (dueMonth > 11) { dueMonth = 0; dueYear += 1; } }
-      const businessDaysUntil = _businessDaysBetween(todayMidnight0b, new Date(dueYear, dueMonth, day));
-      items.push({ day, done, type: 'visa', name: v.name || 'بطاقة', businessDaysUntil, alertDays: parseInt(v.alertDays) || 3 });
+      const overdue = day < todayDay;
+      const bdays = overdue ? 0 : _businessDaysBetween(todayMidnight0b, new Date(today.getFullYear(), today.getMonth(), day));
+      items.push({ day, done, type: 'visa', name: v.name || 'بطاقة', businessDaysUntil: bdays, alertDays: parseInt(v.alertDays) || 3, overdue, daysLate: overdue ? todayDay - day : 0, amount: _r2(req - paid) });
     }
   });
   d.debts.forEach(dd => {
-    const day = parseInt(dd.dueDay); if (!day) return;
-    const curKey3 = getCurrentMonthKey();
-    const paidThisMonth3 = isDebtMonthPaid(dd, curKey3);
-    const done3 = dd.paid || paidThisMonth3;
-    if (!done3) {
-      let dueMonthDD = today.getMonth(), dueYearDD = today.getFullYear();
-      if (day < todayDay) { dueMonthDD += 1; if (dueMonthDD > 11) { dueMonthDD = 0; dueYearDD += 1; } }
-      const businessDaysUntilDD = _businessDaysBetween(todayMidnight0b, new Date(dueYearDD, dueMonthDD, day));
-      items.push({ day, done: false, type: 'debt', name: dd.name || 'قسط', businessDaysUntil: businessDaysUntilDD, alertDays: parseInt(dd.alertDays) || 3 });
-    }
+    // القسط القادم الفعلي (الشهر ده لو لسه ماتسددش، وإلا الشهر اللي بعده...) ويفضل ينبّه لحد ما المديونية تخلص
+    const nd = getDebtNextDue(dd, today); if (!nd) return;
+    items.push({ day: nd.due.getDate(), done: false, type: 'debt', name: dd.name || 'قسط', businessDaysUntil: nd.bdays, alertDays: debtAlertDays(dd), overdue: nd.overdue, daysLate: nd.daysLate, amount: nd.amount });
   });
+
   d.certs.forEach(c => {
     const day = parseInt(c.dayOfMonth); if (!day) return;
     const curKey4 = getCurrentMonthKey();
     const received = !!(c.receivedMonths && c.receivedMonths[curKey4]);
     items.push({ day, done: received, type: 'cert', name: ((c.bank||'') + ' ' + (c.num||'')).trim() || 'شهادة' });
   });
-  items.forEach(it => {
+items.forEach(it => {
     let du = it.day - todayDay;
     if (du < 0) du += daysInMonth;
-    // فيزا وأقساط: تبقى "عاجلة" قبل الاستحقاق بعدد أيام العمل المحدد (افتراضيًا 3، وقابل للتخصيص للأقساط)،
-    // وتفضل كده لحد ما تتسدد بالكامل — مش بس يوم الاستحقاق نفسه، عشان التنبيه ميختفيش قبل السداد الفعلي
+    if (it.type === 'visa' || it.type === 'debt') {
+      // فيزا وأقساط: الإلحاح بالمنطق الضبابي (أيام العمل المتبقية × حجم القسط) — ويفضل كده لحد ما تتسدد فعلاً
+      it.fz = fuzzyUrgency({ bdays: it.businessDaysUntil, overdue: it.overdue, amount: it.amount, ref: _refB, win: it.alertDays || 3 });
+      if (!it.done && _fzIsAlert(it.fz)) { urgentCount++; urgentList.push({ name: it.name, du: it.businessDaysUntil, overdue: it.overdue, isVisa: true, late: it.daysLate || 0, u: it.fz.u }); }
+      return;
+    }
     // الشهادات: زي ما كانت — عاجلة يوم الاستحقاق نفسه بس أو لو فات
-    const urgentWindow = (it.type === 'visa' || it.type === 'debt') ? (it.businessDaysUntil <= (it.alertDays || 3)) : (du === 0);
-    const overdueOrUrgent = !it.done && (urgentWindow || it.day < todayDay);
-    if (overdueOrUrgent) { urgentCount++; urgentList.push({ name: it.name, du: (it.type === 'visa' || it.type === 'debt') ? it.businessDaysUntil : du, overdue: it.day < todayDay, isVisa: it.type === 'visa' || it.type === 'debt' }); }
+    if (!it.done && (du === 0 || it.day < todayDay)) { urgentCount++; urgentList.push({ name: it.name, du, overdue: it.day < todayDay, isVisa: false, late: 0, u: it.day < todayDay ? 1 : 0.8 }); }
   });
   // تنبيهات المستخدم المخصّصة
   const todayKeyForBadge = _todayKey();
@@ -9108,13 +9228,13 @@ function updateDueNotifBadge() {
     } catch(e) {}
   });
   // أخطر بند يتقدّم: متأخر/النهاردة ثم الأقرب — واسمه يظهر في tooltip الجرس وفي toast مرة واحدة كل جلسة
-  urgentList.sort((a, b) => (Number(b.overdue) - Number(a.overdue)) || (a.du - b.du));
+  urgentList.sort((a, b) => (Number(b.overdue) - Number(a.overdue)) || ((b.u ?? 0.8) - (a.u ?? 0.8)) || (a.du - b.du));
   _maybeLocalNotifyVisaDue(urgentList);
-  const sev = urgentList.some(u => u.overdue || u.du <= 0) ? 'hot' : 'warn';
+  const sev = urgentList.some(u => u.overdue || u.du <= 0 || (u.u ?? 0) >= 0.75) ? 'hot' : 'warn';
   const dueBtn = document.getElementById('dueDropBtn');
   if (dueBtn) {
     dueBtn.dataset.sev = urgentCount > 0 ? sev : '';
-    dueBtn.title = urgentList.map(u => u.name + ' — ' + _dueWhenText(u.du, u.overdue, u.isVisa)).join('\n');
+    dueBtn.title = urgentList.map(u => u.name + ' — ' + _dueWhenText(u.du, u.overdue, u.isVisa, u.late)).join('\n');
   }
   badge.dataset.sev = sev;
   if (urgentCount > 0) {
@@ -9124,8 +9244,8 @@ function updateDueNotifBadge() {
       window._duePeekShown = true;
       const f = urgentList[0];
       setTimeout(() => toast(urgentList.length > 1
-        ? remT('peek_more', { name: f.name, when: _dueWhenText(f.du, f.overdue, f.isVisa), n: urgentList.length - 1 })
-        : remT('peek_one', { name: f.name, when: _dueWhenText(f.du, f.overdue, f.isVisa) }), true), 2600);
+        ? remT('peek_more', { name: f.name, when: _dueWhenText(f.du, f.overdue, f.isVisa, f.late), n: urgentList.length - 1 })
+        : remT('peek_one', { name: f.name, when: _dueWhenText(f.du, f.overdue, f.isVisa, f.late) }), true), 2600);
     }
   } else {
     badge.style.display = 'none';
