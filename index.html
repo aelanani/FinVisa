@@ -4098,24 +4098,70 @@ function setInstallCount(n) {
 }
 
 function quickPayDebtsBulk(idxs) {
-  // نعيد استخدام نفس مسار السداد الفردي (openDebtModal + confirmDebtPay) لكل قسط في المجموعة
-  // بدل ما نكرر منطق السداد من الصفر — كده أي تعديل مستقبلي في السداد بيتطبق هنا تلقائيًا كمان
+  // سداد القسط المستحق فعليًا (بعد خصم أي دفعة جزئية) لكل قسط في المجموعة — بنفس مسار السداد الفردي (confirmDebtPay)
   const d = getData();
-  let paidCount = 0, skipped = [];
-  // نرتب تنازليًا عشان لو أي قسط خلص خالص وانتقل لقائمة المنتهية (splice)، الترقيم بتاع الباقيين ما يتزحلقش
-  const sortedIdxs = [...idxs].sort((a,b) => b - a);
+  const today = new Date();
+  const sortedIdxs = [...idxs].sort((a,b) => b - a);   // تنازليًا عشان الـ splice ما يزحلقش الترقيم
+  const plan = [];
   sortedIdxs.forEach(idx => {
-    const debt = d.debts[idx];
-    if (!debt) return;
-    const monthly = parseNum(debt.monthly);
-    if (!monthly) { skipped.push(debt.name || 'قسط'); return; }
-    currentDebtIdx = idx;
-    document.getElementById('debtPayInput').value = monthly;
+    const debt = d.debts[idx]; if (!debt) return;
+    const nd = getDebtNextDue(debt, today);
+    const amt = (nd && nd.amount > 0) ? nd.amount : parseNum(debt.monthly);
+    plan.push({ idx, name: debt.name || 'قسط', amt });
+  });
+  const payable = plan.filter(x => x.amt > 0), skipped = plan.filter(x => !(x.amt > 0)).map(x => x.name);
+  if (!payable.length) { toast('⚠️ مفيش قسط شهري محدد للسداد'); return; }
+  const total = _r2(payable.reduce((a, x) => a + x.amt, 0));
+  if (payable.length > 1 && !confirm(`سداد ${payable.length} أقساط (${payable.map(x => x.name).join('، ')}) بإجمالي ${fmt(total)} ج.م؟`)) return;
+  _liveHaptic(16);
+  payable.forEach(x => {
+    currentDebtIdx = x.idx;
+    document.getElementById('debtPayInput').value = x.amt;
     confirmDebtPay();
-    paidCount++;
   });
   closeDebtModal();
-  if (skipped.length) toast(`⚠️ اتسدد ${paidCount} وتخطينا (${skipped.join('، ')}) — مفيهاش قسط شهري محدد`);
+  _dueRefreshOpen();
+  toast(`✅ اتسدد ${payable.length} ${payable.length > 1 ? 'أقساط' : 'قسط'} · ${fmt(total)} ج.م` + (skipped.length ? ` — تخطينا (${skipped.join('، ')}) لأن مفيهاش قسط شهري` : ''));
+}
+// تحديث قايمة المواعيد في مكانها (من غير قفل/فتح ولا رجوع التمرير لفوق) + البادج + الصفحة
+function _dueRefreshOpen() {
+  try {
+    updateDueNotifBadge();
+    const dd = document.getElementById('dueDropdown');
+    if (dd && dd.style.display !== 'none') {
+      const c = document.getElementById('dueDropContent');
+      const s1 = dd.scrollTop, s2 = c ? c.scrollTop : 0;
+      renderDueDropdownContent();
+      dd.scrollTop = s1; if (c) c.scrollTop = s2;
+    }
+    if (document.getElementById('dueContent')) renderDueDates();
+  } catch (e) { console.warn('[due] refresh failed', e); }
+}
+// زرار الإجراء الموحّد لأي مجموعة تنبيه (قسط / فيزا / شهادة / تذكير) — بيستخدمه الصف العاجل والصف العادي
+function _dueActionBtn(it, variant) {
+  const urg = variant === 'ur';
+  const base = urg ? 'ur-btn' : 'due-act';
+  const n = it.count || 1;
+  const stop = 'event.stopPropagation();';
+  if (it.custom) {
+    return it.done
+      ? `<button class="${base} muted" onclick="${stop}deleteCustomReminder('${it.customId}')">🗑️ حذف</button>`
+      : `<button class="${base} custom" onclick="${stop}markReminderDoneToday('${it.customId}')">✅ تم</button>`;
+  }
+  if (it.type === '📋 قسط' && !it.done && it.debtIdxs && it.debtIdxs.length) {
+    return it.debtIdxs.length > 1
+      ? `<button class="${base} pay all" onclick="${stop}quickPayDebtsBulk(${JSON.stringify(it.debtIdxs)})">💳 سداد الكل <b>${it.debtIdxs.length}</b></button>`
+      : `<button class="${base} pay" onclick="${stop}closeDueDropdown();openDebtModal(${it.debtIdxs[0]})">💳 سداد</button>`;
+  }
+  if (it.type === '💳 فيزا' && !it.done && it.visaIdxs && it.visaIdxs.length) {
+    return `<button class="${base} pay${it.visaIdxs.length > 1 ? ' all' : ''}" onclick="${stop}payVisaFull(${JSON.stringify(it.visaIdxs)})">💳 ${it.visaIdxs.length > 1 ? 'سداد الكل <b>' + it.visaIdxs.length + '</b>' : 'سداد بالكامل'}</button>`;
+  }
+  if (it.type === '🏦 عائد شهادة' && it.certIdxs && it.certIdxs.length) {
+    return it.done
+      ? `<button class="${base} muted" onclick="${stop}toggleCertReceived(${JSON.stringify(it.certIdxs)})">↩️ إلغاء</button>`
+      : `<button class="${base} recv${it.certIdxs.length > 1 ? ' all' : ''}" onclick="${stop}toggleCertReceived(${JSON.stringify(it.certIdxs)})">✅ ${it.certIdxs.length > 1 ? 'استلمت الكل <b>' + it.certIdxs.length + '</b>' : 'استلمت'}</button>`;
+  }
+  return '';
 }
 function payVisaFull(idxOrArr) {
   _liveHaptic(16);
@@ -4123,6 +4169,10 @@ function payVisaFull(idxOrArr) {
   // وده بينعكس فورًا في صفحة الفيزا وفي التنبيهات لأن كلهم بيقروا من نفس الداتا
   const idxs = Array.isArray(idxOrArr) ? idxOrArr : [idxOrArr];
   const d = getData();
+  if (idxs.length > 1) {
+    const tot = _r2(idxs.reduce((a, i) => a + (d.visa[i] ? Math.max(0, parseNum(d.visa[i].required) - parseNum(d.visa[i].paidAmount)) : 0), 0));
+    if (!confirm(`سداد ${idxs.length} بطاقات بالكامل بإجمالي ${fmt(tot)} ج.م؟`)) return;
+  }
   idxs.forEach(i => {
     const v = d.visa[i]; if (!v) return;
     const req = parseNum(v.required);
@@ -4133,7 +4183,7 @@ function payVisaFull(idxOrArr) {
   autoSave();
   renderVisa();
   renderDueDates();
-  if (document.getElementById('dueDropdown') && document.getElementById('dueDropdown').style.display !== 'none') { closeDueDropdown(); toggleDueDropdown(); }
+  _dueRefreshOpen();
   updateDueNotifBadge();
   toast(idxs.length > 1 ? `✅ اتسدد ${idxs.length} فيزا بالكامل` : '✅ اتسددت الفيزا بالكامل');
 }
@@ -6608,30 +6658,42 @@ function toggleCertReceived(idxOrArr) {
   autoSave();
   updateDueNotifBadge();
   if (document.getElementById('dueContent')) renderDueDates();
-  if (document.getElementById('dueDropdown') && document.getElementById('dueDropdown').style.display !== 'none') { closeDueDropdown(); toggleDueDropdown(); }
+  _dueRefreshOpen();
 }
 function _groupDueItems(items) {
   const groups = [];
   items.forEach(it => {
     const key = (it.groupKey || it.name || '').trim();
     const found = groups.find(g =>
-      g.type === it.type && g.day === it.day && g.done === it.done && g.dueKey === it.dueKey &&
-      (it.custom ? g.groupKey === key : (typeof _bgtFuzzySame === 'function' && _bgtFuzzySame(g.groupKey, key)))
+      g.type === it.type && g.done === it.done && g.dueKey === it.dueKey &&
+      // نفس اليوم — أو الاتنين متأخرين (المتأخر بيتجمّع حتى لو اليوم مختلف)
+      (g.day === it.day || (g.overdue && it.overdue && !it.custom)) &&
+      (it.custom ? g.groupKey === key : _dueSameName(g.groupKey, key))
     );
     if (found) {
-      found.amount += it.amount;
+      found.amount = (Number(found.amount) || 0) + (Number(it.amount) || 0);
       found.count++;
-      if (key.length > found.groupKey.length) found.groupKey = key;
-      // اتدمج مع بند تاني — بنجمّع كل الـ indexes عشان زرار واحد يسدد/يقفل كل المجموعة
+      found._keys.push(key);
+      found.overdue = !!(found.overdue || it.overdue);
+      found.daysLate = Math.max(found.daysLate || 0, it.daysLate || 0);
+      if (it.businessDaysUntil !== undefined) found.businessDaysUntil = Math.min(found.businessDaysUntil ?? 99, it.businessDaysUntil);
+      if (it.daysUntil !== undefined) found.daysUntil = Math.min(found.daysUntil ?? 999, it.daysUntil);
       found.debtIdx = undefined;
       if (it.debtIdx !== undefined) found.debtIdxs.push(it.debtIdx);
       if (it.certIdx !== undefined) found.certIdxs.push(it.certIdx);
       if (it.visaIdx !== undefined) found.visaIdxs.push(it.visaIdx);
     } else {
-      groups.push({ ...it, groupKey: key, count: 1, certIdxs: it.certIdx !== undefined ? [it.certIdx] : [], debtIdxs: it.debtIdx !== undefined ? [it.debtIdx] : [], visaIdxs: it.visaIdx !== undefined ? [it.visaIdx] : [] });
+      groups.push({ ...it, groupKey: key, _keys: [key], count: 1, certIdxs: it.certIdx !== undefined ? [it.certIdx] : [], debtIdxs: it.debtIdx !== undefined ? [it.debtIdx] : [], visaIdxs: it.visaIdx !== undefined ? [it.visaIdx] : [] });
     }
   });
-  groups.forEach(g => { g.displayName = g.count > 1 ? `${g.groupKey} (${g.count})` : g.name; });
+  groups.forEach(g => {
+    if (g.count > 1) {
+      // الاسم المعروض = أقصر اسم في المجموعة من غير أرقام في الآخر (ca 268 + ca 150 → ca)
+      const shortest = g._keys.slice().sort((x, y) => x.length - y.length)[0] || g.groupKey;
+      g.groupKey = shortest.replace(/[\s\-_]*[0-9\u0660-\u0669]+\s*$/, '').trim() || shortest;
+    }
+    g.displayName = g.count > 1 ? `${g.groupKey} (${g.count})` : g.name;
+  });
   return groups;
 }
 function renderDueDates() {
@@ -8404,6 +8466,28 @@ function _bgtFuzzySame(a,b) {
   return _bgtLev(na,nb) <= Math.max(1, Math.floor(maxL*0.25));
 }
 
+// ══════════════════════════════════════════
+// تطابق الأسماء الذكي للتنبيهات (Smart name matcher) — حل موحّد لكل التجميعات
+//  بيشيل الأرقام والكلمات العامة (قسط/شهادة/كارت…) ويقارن "الاسم الأساسي" بس:
+//  سهولة 1 = سهولة 2 • فاليو = فاليه • ca 268 = CA 150 • الأهلي = الأهلي شهادة
+// ══════════════════════════════════════════
+function _dueBase(str) {
+  let t = ' ' + _bgtNorm(str).replace(/[0-9\u0660-\u0669]+/g, ' ').replace(/[\-_—–·.,:;()\[\]\/\\|+#*]+/g, ' ') + ' ';
+  t = t.replace(/ (قسط|اقساط|شهاده|شهادات|كارت|بطاقه|حساب|رقم|فيزا|تجديد|سنوي) /g, ' ').replace(/ (قسط|اقساط|شهاده|شهادات|كارت|بطاقه|حساب|رقم|فيزا) /g, ' ');
+  t = t.replace(/ ال(?=\S{3,})/g, ' ').replace(/\s+/g, ' ').trim();   // الأهلي = أهلي
+  return t || _bgtNorm(str);
+}
+function _dueSameName(a, b) {
+  const x = _dueBase(a), y = _dueBase(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const sh = x.length <= y.length ? x : y, lg = x.length <= y.length ? y : x;
+  if (sh.length >= 3 && (lg.startsWith(sh + ' ') || lg.endsWith(' ' + sh))) return true;      // "فاليو" ↔ "فاليو بنك"
+  const maxL = lg.length;
+  const tol = maxL <= 3 ? 0 : maxL <= 5 ? 1 : Math.max(1, Math.floor(maxL * 0.2));
+  return Math.abs(x.length - y.length) <= tol && _bgtLev(x, y) <= tol;
+}
+
 let _bgtACIdx = 0;
 
 function bgtGetSuggestions(query) {
@@ -8938,68 +9022,68 @@ function renderDueDropdownContent() {
       if (it.type === '💳 فيزا' && it.overdue) it.daysLate = todayDay - it.day;
       _applyFz(it, _ref);
     });
-    // ── البنود العاجلة: بتتعرض لوحدها بالاسم (من غير تجميع) وفوق كل حاجة ──
-    const _isUrgent = it => !it.done && !it.isYearly && (it.overdue || (_isFzType(it.type) ? _fzIsAlert(it.fz) : it.daysUntil === 0));
-    const urgentItems = items.filter(_isUrgent).sort((a, b) => (Number(b.overdue) - Number(a.overdue)) || ((b.fz ? b.fz.u : 0.8) - (a.fz ? a.fz.u : 0.8)) || (a.daysUntil - b.daysUntil));
-    const restItems = items.filter(it => !_isUrgent(it));
-    const urgentHtml = urgentItems.length ? `<div class="due-urg-box">
-      <div class="due-urg-title">${remT('urg_title', { n: urgentItems.length })}</div>
-      ${urgentItems.map(it => {
-        const kind = it.custom ? 'custom' : it.visaIdx !== undefined ? 'visa' : it.debtIdx !== undefined ? 'debt' : it.certIdx !== undefined ? 'cert' : '';
-        const idx = it.custom ? it.customId : (it.visaIdx ?? it.debtIdx ?? it.certIdx);
-        const hot = it.overdue || (it.fz ? it.fz.level === 'hot' : it.daysUntil <= 0);
-        const sub = it.custom ? it.type : `${it.type}${it.dueLbl ? ' · ' + it.dueLbl : ''} · ${remT('day_lbl', { d: it.day })}${it.amount ? ' · ' + remT('left_lbl', { a: fmt(it.amount) }) : ''}`;
-        let btn = '';
-        if (kind === 'visa') btn = `<button class="ur-btn" onclick="event.stopPropagation();payVisaFull([${idx}])">${remT('btn_pay')}</button>`;
-        else if (kind === 'debt') btn = `<button class="ur-btn" onclick="event.stopPropagation();closeDueDropdown();openDebtModal(${idx})">${remT('btn_pay')}</button>`;
-        else if (kind === 'cert') btn = `<button class="ur-btn" onclick="event.stopPropagation();toggleCertReceived([${idx}])">${remT('btn_received')}</button>`;
-        else if (kind === 'custom') btn = `<button class="ur-btn" onclick="event.stopPropagation();markReminderDoneToday('${idx}')">${remT('btn_done')}</button>`;
-        return `<div class="due-urg-row ${hot ? 'hot' : 'warn'}" ${kind ? `onclick="dueJumpTo('${kind}', ${kind === 'custom' ? `'${idx}'` : idx})"` : ''}>
-          <div class="ur-main"><div class="ur-name" data-no-i18n>${esc(it.name)}</div><div class="ur-sub">${sub}</div></div>
-          <div class="ur-side"><span class="ur-when" title="${_fzTitle(it)}">${_isFzType(it.type) ? _dueChipText(it) : _dueWhenText(it.daysUntil, it.overdue)}</span>${btn}</div>
-        </div>`;
-      }).join('')}
-      <div class="due-urg-hint">${remT('urg_hint')}</div>
-    </div>` : '';
-    const groupedItems = _groupDueItems(restItems);
-    groupedItems.forEach(g => _applyFz(g, _ref));   // بعد الدمج: الإلحاح بيتحسب على إجمالي المجموعة
-    groupedItems.sort((a,b) => { if(a.done!==b.done) return a.done?1:-1; if(a.overdue!==b.overdue) return a.overdue?-1:1; return a.daysUntil-b.daysUntil; });
-    // بيبني تفاصيل البنود اللي اتجمعت مع بعض (زي "الأهلي (2)") — بيوضح كل شهادة/قسط/بطاقة لوحدها جوه المجموعة
+    // بيبني تفاصيل البنود اللي اتجمعت مع بعض (زي "فاليو (3)") — كل بند لوحده + زرار صغير لإجراء فردي
     const _dueGroupDetailRows = (it) => {
+      const row = (icon, name, val, valColor, btn) => `<div class="due-sub-row"><span class="dsr-name">${icon} ${esc(name)}</span><span class="dsr-val" style="color:${valColor}">${val}</span>${btn || ''}</div>`;
       if (it.type === '🏦 عائد شهادة' && it.certIdxs && it.certIdxs.length > 1) {
         return it.certIdxs.map(ci => {
           const c = d.certs[ci]; if (!c) return '';
           const monthly = c.type === 'decreasing' ? calcDecreasingMonthly(c) : parseNum(c.amount)*parseNum(c.rate)/100/12;
           const received = !!(c.receivedMonths && c.receivedMonths[curKeyForCertsDrop]);
-          return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed var(--border)">
-            <span style="font-size:0.72rem;color:var(--text2);font-weight:700">🏦 ${esc(((c.bank||'')+' '+(c.num||'')).trim() || 'شهادة')}</span>
-            <span style="font-size:0.72rem;font-weight:800;color:${received?'var(--muted)':'var(--accent2)'}">${received?'✓ استلمت':'+'+fmt(monthly)}</span>
-          </div>`;
+          return row('🏦', ((c.bank||'')+' '+(c.num||'')).trim() || 'شهادة', received ? '✓ استلمت' : '+' + fmt(monthly), received ? 'var(--muted)' : 'var(--accent2)',
+            received ? '' : `<button class="ur-mini recv" onclick="event.stopPropagation();toggleCertReceived([${ci}])">✓</button>`);
         }).join('');
       }
       if (it.type === '📋 قسط' && it.debtIdxs && it.debtIdxs.length > 1) {
         return it.debtIdxs.map(di => {
           const dd2 = d.debts[di]; if (!dd2) return '';
           const _nd = getDebtNextDue(dd2, today);
-          const done2 = !_nd;
-          return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed var(--border)">
-            <span style="font-size:0.72rem;color:var(--text2);font-weight:700">📋 ${esc(dd2.name || 'قسط')}</span>
-            <span style="font-size:0.72rem;font-weight:800;color:${done2?'var(--muted)':'var(--text)'}">${done2?'✓ مسدد':fmt(_nd ? _nd.amount : 0)}</span>
-          </div>`;
+          return row('📋', dd2.name || 'قسط', _nd ? fmt(_nd.amount) : '✓ مسدد', _nd ? 'var(--text)' : 'var(--muted)',
+            _nd ? `<button class="ur-mini pay" onclick="event.stopPropagation();closeDueDropdown();openDebtModal(${di})">سداد</button>` : '');
         }).join('');
       }
       if (it.type === '💳 فيزا' && it.visaIdxs && it.visaIdxs.length > 1) {
         return it.visaIdxs.map(vi => {
           const v = d.visa[vi]; if (!v) return '';
           const rem = _r2(parseNum(v.required) - parseNum(v.paidAmount));
-          return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed var(--border)">
-            <span style="font-size:0.72rem;color:var(--text2);font-weight:700">💳 ${esc(v.name || 'بطاقة')}</span>
-            <span style="font-size:0.72rem;font-weight:800">${fmt(rem)}</span>
-          </div>`;
+          return row('💳', v.name || 'بطاقة', fmt(rem), 'var(--text)',
+            rem > 0 ? `<button class="ur-mini pay" onclick="event.stopPropagation();payVisaFull([${vi}])">سداد</button>` : '');
         }).join('');
       }
       return '';
     };
+    // ── تجميع ذكي لكل البنود (العاجل والعادي) الأول، وبعدين نفصل العاجل فوق — عشان "سداد الكل / استلمت الكل" تشتغل في الاتنين ──
+    const allGroups = _groupDueItems(items);
+    allGroups.forEach(g => _applyFz(g, _ref));   // الإلحاح بيتحسب على إجمالي المجموعة
+    const _isUrgent = it => !it.done && !it.isYearly && (it.overdue || (_isFzType(it.type) ? _fzIsAlert(it.fz) : it.daysUntil === 0));
+    const urgentItems = allGroups.filter(_isUrgent).sort((a, b) => (Number(b.overdue) - Number(a.overdue)) || ((b.fz ? b.fz.u : 0.8) - (a.fz ? a.fz.u : 0.8)) || (a.daysUntil - b.daysUntil));
+    const groupedItems = allGroups.filter(it => !_isUrgent(it));
+    const urgentHtml = urgentItems.length ? `<div class="due-urg-box">
+      <div class="due-urg-title">${remT('urg_title', { n: urgentItems.length })}</div>
+      ${urgentItems.map((it, uIdx) => {
+        const kind = it.custom ? 'custom' : it.visaIdxs && it.visaIdxs.length ? 'visa' : it.debtIdxs && it.debtIdxs.length ? 'debt' : it.certIdxs && it.certIdxs.length ? 'cert' : '';
+        const idx = it.custom ? it.customId : (kind === 'visa' ? it.visaIdxs[0] : kind === 'debt' ? it.debtIdxs[0] : kind === 'cert' ? it.certIdxs[0] : '');
+        const hot = it.overdue || (it.fz ? it.fz.level === 'hot' : it.daysUntil <= 0);
+        const multi = it.count > 1 && !it.custom;
+        const sub = it.custom ? it.type : `${it.type}${it.dueLbl ? ' · ' + it.dueLbl : ''} · ${remT('day_lbl', { d: it.day })}${it.amount ? ' · ' + remT('left_lbl', { a: fmt(it.amount) }) : ''}`;
+        const detailId = `urgDetail_${uIdx}`;
+        const meter = (it.fz && it.fz.level !== 'done') ? `<div class="ur-meter" title="${_fzTitle(it)}"><i style="width:${Math.max(6, Math.round(it.fz.u * 100))}%"></i></div>` : '';
+        const clickAttr = multi ? `onclick="toggleDueGroupDetail('${detailId}')"` : (kind ? `onclick="dueJumpTo('${kind}', ${kind === 'custom' ? `'${idx}'` : idx})"` : '');
+        return `<div class="due-urg-group ${hot ? 'hot' : 'warn'}${multi ? ' is-stack' : ''}">
+        <div class="due-urg-row ${hot ? 'hot' : 'warn'}" ${clickAttr}>
+          <div class="ur-main">
+            <div class="ur-name" data-no-i18n>${esc(multi ? it.groupKey : it.name)}${multi ? ` <span class="ur-count">×${it.count}</span> <span id="chev_${detailId}" class="ur-chev">▾</span>` : ''}</div>
+            <div class="ur-sub">${sub}</div>
+            ${meter}
+          </div>
+          <div class="ur-side"><span class="ur-when" title="${_fzTitle(it)}">${_isFzType(it.type) ? _dueChipText(it) : _dueWhenText(it.daysUntil, it.overdue)}</span>${_dueActionBtn(it, 'ur')}</div>
+        </div>
+        ${multi ? `<div class="due-group-detail ur-detail" id="${detailId}" style="display:none">${_dueGroupDetailRows(it)}</div>` : ''}
+        </div>`;
+      }).join('')}
+      <div class="due-urg-hint">${remT('urg_hint')}</div>
+    </div>` : '';
+    groupedItems.sort((a,b) => { if(a.done!==b.done) return a.done?1:-1; if(a.overdue!==b.overdue) return a.overdue?-1:1; return a.daysUntil-b.daysUntil; });
     el.innerHTML = urgentHtml + (urgentItems.length && groupedItems.length ? `<div class="due-sec-title">${remT('upcoming_title')}</div>` : '') + groupedItems.map((it, gIdx) => {
       let urgBg,urgColor,whenText,whenBg,whenColor;
       if (it.custom) {
@@ -9024,22 +9108,7 @@ function renderDueDropdownContent() {
       const canPay = it.type === '📋 قسط' && !it.done && it.debtIdxs && it.debtIdxs.length > 0;
       const canVisaPay = it.type === '💳 فيزا' && !it.done && it.visaIdxs && it.visaIdxs.length > 0;
       const canCertToggle = it.type === '🏦 عائد شهادة' && it.certIdxs && it.certIdxs.length > 0;
-      let actionBtn = '';
-      if (it.custom) {
-        actionBtn = it.done
-          ? `<button onclick="event.stopPropagation();deleteCustomReminder('${it.customId}')" style="margin-top:4px;font-size:0.68rem;font-weight:700;padding:4px 10px;border-radius:7px;border:none;background:var(--surface);color:var(--muted);cursor:pointer;white-space:nowrap">🗑️ حذف</button>`
-          : `<button onclick="event.stopPropagation();markReminderDoneToday('${it.customId}')" style="margin-top:4px;font-size:0.68rem;font-weight:700;padding:4px 10px;border-radius:7px;border:none;background:#6b21a8;color:#fff;cursor:pointer;white-space:nowrap">✅ تم</button>`;
-      } else if (canPay) {
-        actionBtn = it.debtIdxs.length > 1
-          ? `<button onclick="event.stopPropagation();closeDueDropdown();quickPayDebtsBulk(${JSON.stringify(it.debtIdxs)})" style="margin-top:4px;font-size:0.68rem;font-weight:700;padding:4px 10px;border-radius:7px;border:none;background:var(--accent);color:#fff;cursor:pointer;white-space:nowrap">💳 سداد الكل (${it.debtIdxs.length})</button>`
-          : `<button onclick="event.stopPropagation();closeDueDropdown();openDebtModal(${it.debtIdxs[0]})" style="margin-top:4px;font-size:0.68rem;font-weight:700;padding:4px 10px;border-radius:7px;border:none;background:var(--accent);color:#fff;cursor:pointer;white-space:nowrap">💳 سداد</button>`;
-      } else if (canVisaPay) {
-        actionBtn = `<button onclick="event.stopPropagation();payVisaFull(${JSON.stringify(it.visaIdxs)})" style="margin-top:4px;font-size:0.68rem;font-weight:700;padding:4px 10px;border-radius:7px;border:none;background:var(--accent);color:#fff;cursor:pointer;white-space:nowrap">💳 سداد بالكامل${it.visaIdxs.length>1?` (${it.visaIdxs.length})`:''}</button>`;
-      } else if (canCertToggle) {
-        actionBtn = it.done
-          ? `<button onclick="event.stopPropagation();toggleCertReceived(${JSON.stringify(it.certIdxs)})" style="margin-top:4px;font-size:0.68rem;font-weight:700;padding:4px 10px;border-radius:7px;border:none;background:var(--surface);color:var(--muted);cursor:pointer;white-space:nowrap">↩️ إلغاء</button>`
-          : `<button onclick="event.stopPropagation();toggleCertReceived(${JSON.stringify(it.certIdxs)})" style="margin-top:4px;font-size:0.68rem;font-weight:700;padding:4px 10px;border-radius:7px;border:none;background:var(--accent2);color:#fff;cursor:pointer;white-space:nowrap">✅ استلمت</button>`;
-      }
+      const actionBtn = _dueActionBtn(it, 'row');
       const hasDetail = it.count > 1 && !it.custom && (
         (it.certIdxs && it.certIdxs.length > 1) ||
         (it.debtIdxs && it.debtIdxs.length > 1) ||
@@ -9203,11 +9272,11 @@ items.forEach(it => {
     if (it.type === 'visa' || it.type === 'debt') {
       // فيزا وأقساط: الإلحاح بالمنطق الضبابي (أيام العمل المتبقية × حجم القسط) — ويفضل كده لحد ما تتسدد فعلاً
       it.fz = fuzzyUrgency({ bdays: it.businessDaysUntil, overdue: it.overdue, amount: it.amount, ref: _refB, win: it.alertDays || 3 });
-      if (!it.done && _fzIsAlert(it.fz)) { urgentCount++; urgentList.push({ name: it.name, du: it.businessDaysUntil, overdue: it.overdue, isVisa: true, late: it.daysLate || 0, u: it.fz.u }); }
+      if (!it.done && _fzIsAlert(it.fz)) { urgentCount++; urgentList.push({ name: it.name, kind: it.type, du: it.businessDaysUntil, overdue: it.overdue, isVisa: true, late: it.daysLate || 0, u: it.fz.u }); }
       return;
     }
     // الشهادات: زي ما كانت — عاجلة يوم الاستحقاق نفسه بس أو لو فات
-    if (!it.done && (du === 0 || it.day < todayDay)) { urgentCount++; urgentList.push({ name: it.name, du, overdue: it.day < todayDay, isVisa: false, late: 0, u: it.day < todayDay ? 1 : 0.8 }); }
+    if (!it.done && (du === 0 || it.day < todayDay)) { urgentCount++; urgentList.push({ name: it.name, kind: 'cert', du, overdue: it.day < todayDay, isVisa: false, late: 0, u: it.day < todayDay ? 1 : 0.8 }); }
   });
   // تنبيهات المستخدم المخصّصة
   const todayKeyForBadge = _todayKey();
@@ -9227,6 +9296,18 @@ items.forEach(it => {
       }
     } catch(e) {}
   });
+  // دمج ذكي: نفس النوع + اسم متشابه (سهولة 1/2/3 • فاليو/فاليه • ca 268/150) = تنبيه واحد في العدّاد
+  (function () {
+    const merged = [];
+    urgentList.forEach(u => {
+      const f = u.kind && merged.find(m => m.kind === u.kind && m.overdue === u.overdue && _dueSameName(m.base, u.name));
+      if (f) { f.n++; f.u = Math.max(f.u ?? 0, u.u ?? 0); f.late = Math.max(f.late || 0, u.late || 0); f.du = Math.min(f.du, u.du); }
+      else merged.push({ ...u, base: u.name, n: 1 });
+    });
+    merged.forEach(m => { if (m.n > 1) m.name = _dueBase(m.base) + ' (' + m.n + ')'; });
+    urgentList.length = 0; merged.forEach(m => urgentList.push(m));
+    urgentCount = urgentList.length;
+  })();
   // أخطر بند يتقدّم: متأخر/النهاردة ثم الأقرب — واسمه يظهر في tooltip الجرس وفي toast مرة واحدة كل جلسة
   urgentList.sort((a, b) => (Number(b.overdue) - Number(a.overdue)) || ((b.u ?? 0.8) - (a.u ?? 0.8)) || (a.du - b.du));
   _maybeLocalNotifyVisaDue(urgentList);
