@@ -606,7 +606,7 @@ function hideGoogleAuthScreen(user) {
 
     </div><!-- end hdrBtnsWrap -->
 
-    <input type="file" id="importFile" accept=".json,application/json" style="display:none" onchange="importJSON(event)">
+    <input type="file" id="importFile" accept=".json,.xlsx,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none" onchange="importJSON(event)">
   </div>
 
 </div>
@@ -1054,7 +1054,7 @@ document.addEventListener('DOMContentLoaded', () => applyLanguage(APP_LANG));
           <div class="sync-bar-text">💾 نسخة احتياطية كاملة (JSON) — بتشمل كل التبويبات: الميزانية • الفيزا • المحافظ • الشهادات والصناديق • العروض والنقاط • المديونيات • التذكيرات. صدّرها وارفعها على أي جهاز لاسترجاع كل حاجة زي ما كانت.</div>
           <button class="btn btn-success" onclick="exportJSON()">⬇ تصدير</button>
           <button class="btn btn-primary" onclick="askImport('importFile2')">⬆ استيراد</button>
-          <input type="file" id="importFile2" accept=".json,application/json" style="display:none" onchange="importJSON(event)">
+          <input type="file" id="importFile2" accept=".json,.xlsx,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none" onchange="importJSON(event)">
         </div>
         <div style="font-size:0.78rem;color:var(--muted);line-height:1.9">
           <p>✅ آخر حفظ: <span id="lastSaveTime">—</span></p>
@@ -5306,11 +5306,49 @@ function buildBackup() {
       state: st,
       wallets: _bkClone(globalWallets || []),
       reminders: _bkClone(customReminders || []),
+      baseData: _bkCollectBase(st),
       budget: (typeof BG !== 'undefined' && BG.years && BG.years.length)
         ? _bkClone({ years: BG.years, expCats: BGT_CATS, incCats: BGT_INC_CATS })
         : null
     }
   };
+}
+
+// ── البيانات الأساسية للكروت والمديونيات (الحد الأقصى، تواريخ، إجمالي الدين…) — مستقلة عن المعاملات الشهرية ──
+const _BK_VISA_BASE = ['name','limit','dueDay','startDate','period','pointsPct','pointsRedeemed','notes'];
+const _BK_DEBT_BASE = ['name','monthly','totalDebt','remaining','installments','dueDay','paidBase','createdAt','notes','startDate'];
+function _bkPick(o, fields) { const r = {}; fields.forEach(f => { if (o[f] !== undefined && o[f] !== '') r[f] = _bkClone(o[f]); }); return r; }
+// آخر قيمة معروفة لكل كارت/دين (بالاسم) عبر كل الشهور
+function _bkCollectBase(st) {
+  const out = { visa: {}, debts: {} };
+  Object.keys(st).filter(k => _BK_MONTH_RE.test(k)).sort().forEach(k => {
+    const m = st[k]; if (!_bkIsObj(m)) return;
+    (m.visa || []).forEach(v => { if (_bkIsObj(v) && v.name) out.visa[v.name] = Object.assign(out.visa[v.name] || {}, _bkPick(v, _BK_VISA_BASE)); });
+    (m.debts || []).forEach(d => { if (_bkIsObj(d) && d.name) out.debts[d.name] = Object.assign(out.debts[d.name] || {}, _bkPick(d, _BK_DEBT_BASE)); });
+  });
+  return { visa: Object.values(out.visa), debts: Object.values(out.debts) };
+}
+// بيطبّق البيانات الأساسية على كل الشهور: الناقص يتكمّل، والشهر الأحدث ياخد القيم المستوردة
+function _bkApplyBase(st, base) {
+  if (!_bkIsObj(base)) return;
+  const keys = Object.keys(st).filter(k => _BK_MONTH_RE.test(k)).sort();
+  const last = keys[keys.length - 1];
+  const apply = (arr, list) => {
+    (list || []).forEach(b => {
+      if (!_bkIsObj(b) || !b.name) return;
+      (arr || []).forEach(row => {
+        if (!_bkIsObj(row) || row.name !== b.name) return;
+        Object.keys(b).forEach(f => { if (row[f] === undefined || row[f] === '' || row.__isLast) row[f] = _bkClone(b[f]); });
+      });
+    });
+  };
+  keys.forEach(k => {
+    const m = st[k], isLast = k === last;
+    const mark = a => (a || []).forEach(r => { if (_bkIsObj(r)) { if (isLast) r.__isLast = true; } });
+    mark(m.visa); mark(m.debts);
+    apply(m.visa, base.visa); apply(m.debts, base.debts);
+    (m.visa || []).concat(m.debts || []).forEach(r => { if (_bkIsObj(r)) delete r.__isLast; });
+  });
 }
 
 function _bkDownload(obj, filename) {
@@ -5435,13 +5473,14 @@ function _bkParse(text) {
   catch (e) { return { error: 'ملف غير صالح — مش JSON سليم' }; }
   if (!_bkIsObj(parsed)) return { error: 'الملف ده مش نسخة احتياطية من التطبيق' };
 
-  let st, wallets = null, reminders = null, budget = null, full = false;
+  let st, wallets = null, reminders = null, budget = null, full = false, baseData = null;
   if (parsed.app === BACKUP_APP_ID && _bkIsObj(parsed.data)) {
     // الصيغة الجديدة (كاملة)
     full = true;
     st = parsed.data.state;
     if (Array.isArray(parsed.data.wallets)) wallets = parsed.data.wallets;
     if (Array.isArray(parsed.data.reminders)) reminders = parsed.data.reminders;
+    if (_bkIsObj(parsed.data.baseData)) baseData = parsed.data.baseData;
     const b = parsed.data.budget;
     if (_bkIsObj(b) && Array.isArray(b.years) && b.years.length &&
         b.years.every(y => _bkIsObj(y) && Array.isArray(y.months))) budget = b;
@@ -5464,6 +5503,7 @@ function _bkParse(text) {
     _BK_MONTH_ARRAYS.forEach(f => { if (!Array.isArray(m[f])) m[f] = []; });
     clean[k] = m;
   });
+  _bkApplyBase(clean, baseData || _bkCollectBase(clean));
   // محافظ/تذكيرات: نقبل بس العناصر اللي فعلاً كائنات
   if (wallets) wallets = wallets.filter(_bkIsObj);
   if (reminders) reminders = reminders.filter(_bkIsObj);
@@ -5475,11 +5515,22 @@ function importJSON(e) {
   const file = input.files && input.files[0];
   if (!file) return;
   const done = () => { try { input.value = ''; } catch (x) {} };
+  const isXlsx = /\.xlsx?$/i.test(file.name);
   const reader = new FileReader();
   reader.onerror = () => { toast('❌ تعذّرت قراءة الملف'); done(); };
-  reader.onload = ev => {
+  reader.onload = async ev => {
     try {
-      const r = _bkParse(ev.target.result);
+      let _src = ev.target.result;
+      if (isXlsx) {
+        if (!window.XLSX) await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
+        const wb = XLSX.read(new Uint8Array(_src), { type: 'array' });
+        const ws = wb.Sheets['_mataa_data'];
+        if (!ws) { toast('❌ ملف Excel ده مش من تصدير التطبيق (مفيش بيانات كاملة جواه)'); return; }
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        if (!rows.length || rows[0][0] !== 'MATAA_BACKUP_V1') { toast('❌ ملف Excel غير صالح'); return; }
+        _src = rows.slice(1).map(r => r[0] || '').join('');
+      }
+      const r = _bkParse(_src);
       if (r.error) { toast('❌ ' + r.error); return; }
       const lines = [`📅 ${r.monthCount} شهر (الفيزا / الشهادات والصناديق / العروض / المديونيات)`];
       lines.push(r.wallets ? `👛 ${r.wallets.length} محفظة` : '👛 المحافظ: هتفضل زي ما هي');
@@ -5505,7 +5556,7 @@ function importJSON(e) {
       toast('❌ حصل خطأ أثناء تطبيق البيانات المستوردة');
     } finally { done(); }
   };
-  reader.readAsText(file);
+  if (isXlsx) reader.readAsArrayBuffer(file); else reader.readAsText(file);
 }
 
 // بيطبّق النسخة على كل التبويبات ويحفظها محليًا + Firebase
@@ -10708,13 +10759,14 @@ async function exportToExcel(selMonth) {
     }
 
     // ── Sheet 4: الفيزا — كل الشهور ──
-    const visaAllRows = [['الشهر','البطاقة','المطلوب (ج.م)','المدفوع (ج.م)','المتبقي (ج.م)','نسبة السداد %','يوم الاستحقاق','الحالة']];
+    const visaAllRows = [['الشهر','البطاقة','المطلوب (ج.م)','المدفوع (ج.م)','المتبقي (ج.م)','نسبة السداد %','يوم الاستحقاق','الحالة','الحد الأقصى (ج.م)','المتاح (ج.م)','تاريخ البداية','المدة','نسبة النقاط %']];
     allMonthsData.forEach(({ label, d, s }) => {
       if (!d.visa || !d.visa.length) return;
       d.visa.forEach(v => {
         const req = parseNum(v.required), paid = parseNum(v.paidAmount);
         visaAllRows.push([label, v.name||'', req, paid, Math.max(0,req-paid),
-          req>0?Math.round(paid/req*100):0, v.dueDay?'يوم '+v.dueDay:'', v.paid?'مسدد ✓':'معلق']);
+          req>0?Math.round(paid/req*100):0, v.dueDay?'يوم '+v.dueDay:'', v.paid?'مسدد ✓':'معلق',
+          parseNum(v.limit), parseNum(v.limit)>0?Math.max(0,parseNum(v.limit)-Math.max(0,req-paid)):'', v.startDate||'', v.period||'', v.pointsPct||'']);
       });
       visaAllRows.push([label+' — إجمالي','', s.visaReq, s.visaPaid, s.visaRem,'','','']);
     });
@@ -10725,11 +10777,11 @@ async function exportToExcel(selMonth) {
     }
 
     // ── Sheet 5: الأقساط — كل الشهور ──
-    const debtAllRows = [['الشهر','الاسم','القسط الشهري (ج.م)','يوم الاستحقاق','الحالة','ملاحظات']];
+    const debtAllRows = [['الشهر','الاسم','القسط الشهري (ج.م)','يوم الاستحقاق','الحالة','ملاحظات','إجمالي الدين (ج.م)','المتبقي (ج.م)','عدد الأقساط']];
     allMonthsData.forEach(({ label, d, s }) => {
       if (!d.debts || !d.debts.length) return;
       d.debts.forEach(dd => {
-        debtAllRows.push([label, dd.name||'', parseNum(dd.monthly), dd.dueDay||'', dd.paid?'مسدد ✓':'معلق', dd.notes||'']);
+        debtAllRows.push([label, dd.name||'', parseNum(dd.monthly), dd.dueDay||'', dd.paid?'مسدد ✓':'معلق', dd.notes||'', parseNum(dd.totalDebt), parseNum(dd.remaining), dd.installments||'']);
       });
       debtAllRows.push([label+' — إجمالي','', s.debtsMonthly,'','','']);
     });
@@ -10764,6 +10816,27 @@ async function exportToExcel(selMonth) {
     const wsBgt = XLSX.utils.aoa_to_sheet(bgtRows);
     wsBgt['!cols'] = [{wch:8},{wch:10},{wch:16},...BGT_CATS.map(()=>({wch:14})),...BGT_INC_CATS.map(()=>({wch:16})),{wch:18},{wch:14}];
     XLSX.utils.book_append_sheet(wb, wsBgt, 'الميزانية');
+
+    // ── Sheet: البيانات الأساسية للكروت والمديونيات ──
+    const _base = _bkCollectBase(state);
+    const baseRows = [['النوع','الاسم','الحد الأقصى (ج.م)','القسط الشهري (ج.م)','إجمالي الدين (ج.م)','المتبقي (ج.م)','عدد الأقساط','يوم الاستحقاق','تاريخ البداية','المدة','نسبة النقاط %','ملاحظات']];
+    _base.visa.forEach(v => baseRows.push(['فيزا', v.name||'', parseNum(v.limit), '', '', '', '', v.dueDay||'', v.startDate||'', v.period||'', v.pointsPct||'', v.notes||'']));
+    _base.debts.forEach(d => baseRows.push(['مديونية', d.name||'', '', parseNum(d.monthly), parseNum(d.totalDebt), parseNum(d.remaining), d.installments||'', d.dueDay||'', d.startDate||'', '', '', d.notes||'']));
+    if (baseRows.length > 1) {
+      const wsBase = XLSX.utils.aoa_to_sheet(baseRows);
+      wsBase['!cols'] = [{wch:10},{wch:22},{wch:16},{wch:16},{wch:16},{wch:14},{wch:12},{wch:12},{wch:14},{wch:10},{wch:12},{wch:24}];
+      XLSX.utils.book_append_sheet(wb, wsBase, 'البيانات الأساسية');
+    }
+    // ── Sheet مخفية: نسخة كاملة للاستيراد الذكي (بدون صور الكروت عشان الحجم) ──
+    try {
+      const _bk = buildBackup();
+      Object.keys(_bk.data.state).forEach(k => { const m = _bk.data.state[k]; if (_bkIsObj(m) && Array.isArray(m.visa)) m.visa.forEach(v => { delete v.imgFront; delete v.imgBack; }); });
+      const _txt = JSON.stringify(_bk), _rows = [['MATAA_BACKUP_V1']];
+      for (let i = 0; i < _txt.length; i += 30000) _rows.push([_txt.slice(i, i + 30000)]);
+      const wsHid = XLSX.utils.aoa_to_sheet(_rows);
+      XLSX.utils.book_append_sheet(wb, wsHid, '_mataa_data');
+      wb.Workbook = { Sheets: wb.SheetNames.map(n => ({ Hidden: n === '_mataa_data' ? 1 : 0 })) };
+    } catch (e) { console.warn('hidden backup sheet failed', e); }
 
     const fileName = selMonth ? `شيت_استثمار_${monthLabel(selMonth)}_${new Date().toISOString().slice(0,10)}.xlsx` : `شيت_استثمار_كامل_${new Date().toISOString().slice(0,10)}.xlsx`;
     XLSX.writeFile(wb, fileName);
