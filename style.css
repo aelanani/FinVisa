@@ -28,6 +28,17 @@
 @media (min-width: 1600px) {
   :root { --content-max: 1500px; }
 }
+/* 🌿 Mata'a — الهوية الجديدة: كحلي عميق + زمردي هادئ + لمسات ذهبية على أسطح محايدة */
+[data-theme="mataa"] {
+  --navy: #142A35; --navy-2: #1B3B47;
+  --bg: #F4F6F7; --surface: #FFFFFF; --card: #FFFFFF;
+  --border: #E3E9EC; --border2: #CBD6DB;
+  --accent: #177B62; --accent2: #1F9A7B; --accent3: #B7872F;
+  --danger: #C0392B; --text: #142A35; --text2: #3F5967;
+  --muted: #678090; --gold: #D9AD59;
+  --shadow: 0 4px 18px -4px rgba(20,42,53,0.10), 0 2px 6px -2px rgba(20,42,53,0.06);
+  --shadow-lg: 0 18px 44px -10px rgba(20,42,53,0.22), 0 4px 14px -4px rgba(20,42,53,0.10);
+}
 /* 🌙 Midnight Carbon */
 [data-theme="midnight"] {
   --bg: #0b0f19; --surface: #131a26; --card: #131a26;
@@ -3312,3 +3323,41 @@ button, .tab, [onclick], summary, label { touch-action: manipulation; }
   .wc-quick-btn { grid-column: 1 / -1; min-height: 44px; }
   .wc-quick .cell-input { min-height: 46px; font-size: 16px; }
 }
+
+
+/* ═══════════════════════════════════════════════════════════════
+   🌿 ثيم "متاع" — تلميعات المكوّنات (بتتطبّق على الثيم ده بس، باقي الثيمات زي ما هي)
+   ═══════════════════════════════════════════════════════════════ */
+[data-theme="mataa"] body { background: var(--bg); }
+[data-theme="mataa"] .header { background: color-mix(in srgb, var(--surface) 94%, transparent); border-bottom: 1px solid var(--border); box-shadow: 0 1px 0 rgba(20,42,53,.03); }
+[data-theme="mataa"] .header-brand-name { color: var(--navy); font-weight: 900; letter-spacing: -.01em; }
+[data-theme="mataa"] .tabs { background: var(--surface); border-color: var(--border); box-shadow: var(--shadow); }
+[data-theme="mataa"] .tab { color: var(--text2); font-weight: 700; }
+[data-theme="mataa"] .tab:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+[data-theme="mataa"] .tab.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--accent) 75%, transparent); }
+
+/* الكروت: سطح أبيض نضيف + حد خفيف + ظل ناعم (من غير ألوان مزاحمة) */
+[data-theme="mataa"] .item-card, [data-theme="mataa"] .fin-card, [data-theme="mataa"] .cc-card, [data-theme="mataa"] .debt-card, [data-theme="mataa"] .summary-card,
+[data-theme="mataa"] .bgt-hero, [data-theme="mataa"] .bgt-hero-mini, [data-theme="mataa"] .bgt-day-group, [data-theme="mataa"] .ws-box {
+  background: var(--surface); border-color: var(--border); box-shadow: var(--shadow);
+}
+[data-theme="mataa"] .bgt-hero { border-width: 1px; }
+[data-theme="mataa"] .section-title, [data-theme="mataa"] .item-card-title, [data-theme="mataa"] .cc-title, [data-theme="mataa"] .wc-name { color: var(--navy); }
+
+/* الأزرار: الأساسي زمردي متدرّج، والثانوي أبيض بحد هادئ، والذهبي للتمييز فقط */
+[data-theme="mataa"] .btn-primary, [data-theme="mataa"] .wc-add-btn, [data-theme="mataa"] .wc-quick-btn, [data-theme="mataa"] .vq-add, [data-theme="mataa"] .visa-entry-add-btn, [data-theme="mataa"] .visa-pay-quick {
+  background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border: none;
+}
+[data-theme="mataa"] .btn-add { background: var(--surface); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); font-weight: 800; }
+[data-theme="mataa"] .btn-add:hover { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+[data-theme="mataa"] .ux-qa-go, [data-theme="mataa"] #uxQuickBtn { background: linear-gradient(135deg, var(--navy), var(--accent)); }
+[data-theme="mataa"] .fab-add { background: linear-gradient(135deg, var(--accent), var(--accent2)); box-shadow: 0 10px 24px -8px color-mix(in srgb, var(--accent) 80%, transparent); }
+
+/* الحقول والبادجات */
+[data-theme="mataa"] .cell-input, [data-theme="mataa"] .search-input { background: #FAFBFC; border-color: var(--border2); color: var(--text); }
+[data-theme="mataa"] .cell-input:focus, [data-theme="mataa"] .search-input:focus { background: #fff; border-color: var(--accent); }
+[data-theme="mataa"] .badge-paid { background: color-mix(in srgb, var(--accent) 12%, #fff); color: var(--accent); }
+[data-theme="mataa"] .progress-wrap { background: #E8EEF0; }
+[data-theme="mataa"] .progress-bar { border-radius: 99px; }
+[data-theme="mataa"] .ux-chip.on, [data-theme="mataa"] .cert-type-btn.active { background: color-mix(in srgb, var(--accent) 12%, #fff); border-color: var(--accent); color: var(--accent); }
+[data-theme="mataa"] .bottom-nav { background: var(--surface); border-top: 1px solid var(--border); box-shadow: 0 -8px 24px -12px rgba(20,42,53,.18); }
