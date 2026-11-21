@@ -2646,8 +2646,9 @@ body { padding-top: var(--sat); }
 .debt-fig span { display: block; font-size: 0.66rem; font-weight: 600; color: var(--muted); }
 .debt-fig b { display: block; margin-top: 1px; font-size: 1rem; font-weight: 700; color: var(--text); letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .debt-fig-main { background: color-mix(in srgb, var(--st) 8%, var(--bg)); border-color: color-mix(in srgb, var(--st) 25%, var(--border)); }
-.debt-fig-main b { font-size: 1.2rem; font-weight: 800; color: color-mix(in srgb, var(--st) 80%, var(--text)); }
-.debt-fig-main b small { font-size: 0.66rem; font-weight: 600; color: var(--muted); }
+.debt-fig-main b { font-size: 1.1rem; font-weight: 800; color: color-mix(in srgb, var(--st) 80%, var(--text)); }
+/* العملة تحت الرقم عشان الرقم ما يتقطعش بنقط في الكروت الضيقة */
+.debt-fig-main b small { display: block; font-size: 0.66rem; font-weight: 600; color: var(--muted); }
 
 /* شريط التقدم */
 .debt-progress { height: 6px; margin-top: 12px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--text) 10%, transparent); }
