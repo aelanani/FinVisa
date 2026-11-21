@@ -1,0 +1,1917 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="light">
+<head>
+<script>
+// نطبّق الثيم المحفوظ فورًا (قبل ما أي CSS يترسم) عشان شاشة التحميل والصفحة كلها
+// تظهر بألوان الثيم الصح من أول لحظة، بدل ما تومض بالثيم الافتراضي (light) لحظة
+// قبل ما الكود الرئيسي يشتغل ويطبّق الثيم المحفوظ.
+try {
+  var _savedTheme = localStorage.getItem('appTheme');
+  // أول مرة بعد تحديث Claude skin: نحوّل للثيم الجديد (فاتح/داكن حسب النظام)، وبعدها اختيارك محفوظ
+  if (localStorage.getItem('skinClaude1') !== '1') {
+    _savedTheme = _savedTheme || 'gray';
+    localStorage.setItem('appTheme', _savedTheme); localStorage.setItem('skinClaude1', '1');
+  }
+  document.documentElement.setAttribute('data-theme', _savedTheme || 'gray');   // مستخدم جديد → الهوية الجديدة؛ المستخدم القديم بيفضل على ثيمه
+} catch(e) {}
+// لو مساحة المتصفح امتلت: نمسك الخطأ بدل ما يفشل الحفظ بصمت، وننبّه المستخدم ياخد نسخة احتياطية
+(function () {
+  try {
+    var _orig = Storage.prototype.setItem, _warned = false;
+    Storage.prototype.setItem = function (k, v) {
+      try { return _orig.call(this, k, v); }
+      catch (e) {
+        var quota = e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22 || e.code === 1014);
+        if (!quota) throw e;
+        console.error('Storage quota exceeded:', k);
+        if (!_warned) {
+          _warned = true;
+          setTimeout(function () { _warned = false; }, 60000);
+          var show = function () {
+            var b = document.createElement('div');
+            b.setAttribute('role', 'alert');
+            b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:100000;background:#991b1b;color:#fff;padding:12px 16px;font:700 0.85rem Cairo,sans-serif;text-align:center;direction:rtl;box-shadow:0 4px 16px rgba(0,0,0,.35)';
+            b.innerHTML = '⚠️ مساحة التخزين في المتصفح امتلت — آخر تعديلات ممكن ما تتحفظش. صدّر نسخة احتياطية الأول وامسح بيانات قديمة. <button style="margin-inline-start:10px;padding:4px 12px;border:0;border-radius:8px;font:inherit;cursor:pointer" onclick="try{exportJSON()}catch(e){}">📥 تصدير</button> <button style="margin-inline-start:6px;padding:4px 10px;border:0;border-radius:8px;font:inherit;cursor:pointer;background:transparent;color:#fff" onclick="this.parentNode.remove()">✕</button>';
+            document.body.appendChild(b);
+          };
+          if (document.body) show(); else window.addEventListener('DOMContentLoaded', show, { once: true });
+        }
+        return undefined;
+      }
+    };
+  } catch (e) {}
+})();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Vault</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
+<meta name="theme-color" content="#3F4852">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Vault">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<!-- الخط بيتحمّل بدون ما يوقّف رسم الصفحة (لو النت ضعيف يظهر بخط النظام وبعدها يتبدّل) -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&display=swap" media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&display=swap"></noscript>
+<!-- Firebase: ابدأ تحميله بالتوازي بدل ما تستنى لحد ما الـ HTML الكبير يخلّص parsing -->
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/12.13.0/firebase-database.js">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js">
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs><linearGradient id="mzTile" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--lg-t1)"/><stop offset="1" style="stop-color:var(--lg-t2)"/></linearGradient><linearGradient id="mzMetal" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--lg-b2)"/><stop offset="1" style="stop-color:var(--lg-b3)"/></linearGradient><radialGradient id="mzGlow"><stop offset="0" style="stop-color:var(--lg-glow)"/><stop offset="1" style="stop-color:var(--lg-glow);stop-opacity:0"/></radialGradient></defs></svg>
+
+<!-- ══════════════════════════════════════════
+     SPLASH SCREEN
+══════════════════════════════════════════ -->
+
+<div id="splashScreen">
+  <div class="splash-icon">
+    <svg class="mz-logo mz-lg" viewBox="0 0 100 100" width="92" height="92" role="img" aria-label="Vault"><rect width="100" height="100" rx="22" fill="url(#mzTile)"/><circle class="mz-glow" cx="50" cy="50" r="42" fill="url(#mzGlow)"/><rect x="4" y="29" width="92" height="42" rx="21" fill-opacity=".55" stroke-opacity=".6" stroke-width=".8" style="fill:var(--lg-b3);stroke:var(--lg-b2)"/><rect x="10" y="38.4" width="17" height="2.4" rx="1.2" fill-opacity=".7" style="fill:var(--lg-t1)"/><rect x="10" y="59.2" width="17" height="2.4" rx="1.2" fill-opacity=".7" style="fill:var(--lg-t1)"/><rect x="73" y="38.4" width="17" height="2.4" rx="1.2" fill-opacity=".7" style="fill:var(--lg-t1)"/><rect x="73" y="59.2" width="17" height="2.4" rx="1.2" fill-opacity=".7" style="fill:var(--lg-t1)"/><g transform="translate(50 50) scale(1.04) translate(-50 -50)"><circle cx="50" cy="50" r="31" stroke-opacity=".85" stroke-width="1" style="fill:url(#mzMetal);stroke:var(--lg-b1)"/><g class="mz-dial"><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(0)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(30)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(60)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(90)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(120)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(150)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(180)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(210)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(240)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(270)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(300)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(330)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/></g><circle cx="57.43" cy="22.28" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="70.29" cy="29.71" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="77.72" cy="42.57" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="77.72" cy="57.43" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="70.29" cy="70.29" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="57.43" cy="77.72" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="42.57" cy="77.72" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="29.71" cy="70.29" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="22.28" cy="57.43" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="22.28" cy="42.57" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="29.71" cy="29.71" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="42.57" cy="22.28" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="50" cy="50" r="15.6" stroke-width=".9" style="fill:var(--lg-t1);stroke:var(--lg-b2)"/><circle cx="50" cy="50" r="12.4" stroke-width="1.5" style="fill:var(--lg-t2);stroke:var(--lg-s1)"/><circle cx="50" cy="50" r="10.4" fill-opacity=".30" style="fill:var(--lg-s2)"/><g transform="translate(50.5 50)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="fill:none;stroke:var(--lg-s1)"><circle cx="-2.4" cy="-2.7" r="3.1"/><path d="M0.7 -2.7C0.7 1.6 -0.7 4.4 -3.7 5.9"/><path d="M2.3 -3.9L4.6 -6V6"/></g></g></svg>
+  </div>
+  <div class="splash-title">Vault</div>
+  <div class="splash-subtitle">إدارتك المالية بذكاء</div>
+  <div class="splash-dots">
+    <div class="splash-dot"></div>
+    <div class="splash-dot"></div>
+    <div class="splash-dot"></div>
+  </div>
+</div>
+
+<script>
+(function() {
+  // الـ Splash بيتشال أول ما التطبيق يجهز (أو بعد 2.5 ثانية كحد أقصى) — مش مستني حدث load ولا مهلة ثابتة
+  var t0 = Date.now(), done = false;
+  function reallyHide() {
+    if (done) return; done = true;
+    var splash = document.getElementById('splashScreen');
+    if (!splash) return;
+    splash.classList.add('hiding');
+    setTimeout(function() { if (splash.parentNode) splash.parentNode.removeChild(splash); }, 520);
+  }
+  // أقل مدة عرض ~0.5 ثانية عشان ما يومّضش
+  window._hideSplash = function() { setTimeout(reallyHide, Math.max(0, 500 - (Date.now() - t0))); };
+  setTimeout(reallyHide, 2500);
+})();
+</script>
+
+
+
+<div id="googleAuthOverlay" style="display:none">
+  <div class="gauth-box">
+    <div class="gauth-logo"><svg class="mz-logo mz-lg" viewBox="0 0 100 100" width="68" height="68" role="img" aria-label="Vault"><rect width="100" height="100" rx="22" fill="url(#mzTile)"/><circle class="mz-glow" cx="50" cy="50" r="42" fill="url(#mzGlow)"/><rect x="4" y="29" width="92" height="42" rx="21" fill-opacity=".55" stroke-opacity=".6" stroke-width=".8" style="fill:var(--lg-b3);stroke:var(--lg-b2)"/><rect x="10" y="38.4" width="17" height="2.4" rx="1.2" fill-opacity=".7" style="fill:var(--lg-t1)"/><rect x="10" y="59.2" width="17" height="2.4" rx="1.2" fill-opacity=".7" style="fill:var(--lg-t1)"/><rect x="73" y="38.4" width="17" height="2.4" rx="1.2" fill-opacity=".7" style="fill:var(--lg-t1)"/><rect x="73" y="59.2" width="17" height="2.4" rx="1.2" fill-opacity=".7" style="fill:var(--lg-t1)"/><g transform="translate(50 50) scale(1.04) translate(-50 -50)"><circle cx="50" cy="50" r="31" stroke-opacity=".85" stroke-width="1" style="fill:url(#mzMetal);stroke:var(--lg-b1)"/><g class="mz-dial"><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(0)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(30)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(60)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(90)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(120)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(150)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(180)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(210)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(240)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(270)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(300)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(330)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/></g><circle cx="57.43" cy="22.28" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="70.29" cy="29.71" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="77.72" cy="42.57" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="77.72" cy="57.43" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="70.29" cy="70.29" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="57.43" cy="77.72" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="42.57" cy="77.72" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="29.71" cy="70.29" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="22.28" cy="57.43" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="22.28" cy="42.57" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="29.71" cy="29.71" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="42.57" cy="22.28" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="50" cy="50" r="15.6" stroke-width=".9" style="fill:var(--lg-t1);stroke:var(--lg-b2)"/><circle cx="50" cy="50" r="12.4" stroke-width="1.5" style="fill:var(--lg-t2);stroke:var(--lg-s1)"/><circle cx="50" cy="50" r="10.4" fill-opacity=".30" style="fill:var(--lg-s2)"/><g transform="translate(50.5 50)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="fill:none;stroke:var(--lg-s1)"><circle cx="-2.4" cy="-2.7" r="3.1"/><path d="M0.7 -2.7C0.7 1.6 -0.7 4.4 -3.7 5.9"/><path d="M2.3 -3.9L4.6 -6V6"/></g></g></svg></div>
+    <div class="gauth-title" data-i18n="brand_name">Vault</div>
+    <div class="gauth-sub"><span data-i18n="google_sub_line1">سجّل دخولك بحساب Google</span><br><span data-i18n="google_sub_line2">عشان بياناتك تتزامن على كل أجهزتك</span></div>
+    <button class="gauth-btn" id="authGoogleBtn" onclick="window._googleSignIn()">
+      <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.2 5.5-4.7 7.2l7.6 5.9c4.4-4.1 6.9-10.1 6.9-17.6z"/><path fill="#FBBC05" d="M10.5 28.7c-.5-1.4-.8-3-.8-4.7s.3-3.2.8-4.7l-7.9-6.1C.9 16.4 0 20.1 0 24s.9 7.6 2.6 10.8l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.6-5.9c-2.1 1.4-4.9 2.3-8.3 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.1C6.5 42.6 14.6 48 24 48z"/></svg>
+      <span data-i18n="google_signin_btn">تسجيل الدخول بـ Google</span>
+    </button>
+    <button type="button" class="gauth-btn" id="authLocalBtn" onclick="_enterLocalMode()" style="margin-top:10px;background:transparent;color:var(--text2,#555);border:1.5px solid var(--border2,#d0d5dd);box-shadow:none"><span>📱 استخدام بدون حساب (على الجهاز فقط)</span></button>
+    <div class="gauth-error" id="authGoogleError"></div>
+    <div class="gauth-lock" data-i18n="google_privacy_note">🔒 بياناتك خاصة بيك بس</div>
+  </div>
+</div>
+
+<script>
+function showGoogleAuthScreen() {
+  try { if (window._hideSplash) window._hideSplash(); } catch (e) {}
+  const el = document.getElementById('googleAuthOverlay');
+  el.style.display = 'flex';
+  el.classList.remove('hiding');
+}
+function hideGoogleAuthScreen(user) {
+  const el = document.getElementById('googleAuthOverlay');
+  if (!el) return;
+  el.classList.add('hiding');
+  setTimeout(() => {
+    el.style.display = 'none';
+    document.body.style.overflow = '';
+    document.documentElement.style.overflow = '';
+    window.dispatchEvent(new Event('resize'));
+  }, 400);
+}
+</script>
+
+
+<!-- ══════════════════════════════════════════
+     AUTH LOCK SCREEN
+══════════════════════════════════════════ -->
+
+<div id="authOverlay">
+  <div class="auth-box" id="authBox">
+    <div class="auth-logo" id="authLogo"><svg class="mz-logo mz-lg" viewBox="0 0 100 100" width="60" height="60" role="img" aria-label="Vault"><rect width="100" height="100" rx="22" fill="url(#mzTile)"/><circle class="mz-glow" cx="50" cy="50" r="42" fill="url(#mzGlow)"/><rect x="4" y="29" width="92" height="42" rx="21" fill-opacity=".55" stroke-opacity=".6" stroke-width=".8" style="fill:var(--lg-b3);stroke:var(--lg-b2)"/><rect x="10" y="38.4" width="17" height="2.4" rx="1.2" fill-opacity=".7" style="fill:var(--lg-t1)"/><rect x="10" y="59.2" width="17" height="2.4" rx="1.2" fill-opacity=".7" style="fill:var(--lg-t1)"/><rect x="73" y="38.4" width="17" height="2.4" rx="1.2" fill-opacity=".7" style="fill:var(--lg-t1)"/><rect x="73" y="59.2" width="17" height="2.4" rx="1.2" fill-opacity=".7" style="fill:var(--lg-t1)"/><g transform="translate(50 50) scale(1.04) translate(-50 -50)"><circle cx="50" cy="50" r="31" stroke-opacity=".85" stroke-width="1" style="fill:url(#mzMetal);stroke:var(--lg-b1)"/><g class="mz-dial"><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(0)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(30)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(60)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(90)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(120)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(150)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(180)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(210)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(240)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(270)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(300)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(330)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/></g><circle cx="57.43" cy="22.28" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="70.29" cy="29.71" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="77.72" cy="42.57" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="77.72" cy="57.43" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="70.29" cy="70.29" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="57.43" cy="77.72" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="42.57" cy="77.72" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="29.71" cy="70.29" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="22.28" cy="57.43" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="22.28" cy="42.57" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="29.71" cy="29.71" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="42.57" cy="22.28" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="50" cy="50" r="15.6" stroke-width=".9" style="fill:var(--lg-t1);stroke:var(--lg-b2)"/><circle cx="50" cy="50" r="12.4" stroke-width="1.5" style="fill:var(--lg-t2);stroke:var(--lg-s1)"/><circle cx="50" cy="50" r="10.4" fill-opacity=".30" style="fill:var(--lg-s2)"/><g transform="translate(50.5 50)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="fill:none;stroke:var(--lg-s1)"><circle cx="-2.4" cy="-2.7" r="3.1"/><path d="M0.7 -2.7C0.7 1.6 -0.7 4.4 -3.7 5.9"/><path d="M2.3 -3.9L4.6 -6V6"/></g></g></svg></div>
+    <div class="auth-title">Vault</div>
+    <div class="auth-sub" id="authSubtitle" data-i18n="login_subtitle">أدخل كلمة المرور للمتابعة</div>
+
+    <div class="auth-error" id="authError"></div>
+
+    <form id="authForm" autocomplete="on" onsubmit="event.preventDefault(); window._authSubmit(); return false;">
+      <input type="text" id="authUsernameInput" name="username" autocomplete="username"
+        value="Khazinaty" style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0" aria-hidden="true" tabindex="-1">
+      <div class="auth-input-wrap">
+        <input type="password" id="authPasswordInput" class="auth-input"
+          placeholder="كلمة المرور" data-i18n-placeholder="login_password_placeholder" autocomplete="current-password"
+          onkeydown="if(event.key==='Enter'){event.preventDefault(); window._authSubmit();}">
+      </div>
+
+      <!-- تذكرني -->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;justify-content:center">
+        <input type="checkbox" id="authRememberMe" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer">
+        <label for="authRememberMe" style="font-size:0.8rem;color:#777;cursor:pointer" data-i18n="login_remember_me">تذكرني لمدة 7 أيام</label>
+      </div>
+
+      <button type="submit" class="auth-btn" id="authSubmitBtn" data-i18n="login_submit">
+        دخول
+      </button>
+    </form>
+
+    <div id="authBioSection" style="display:none">
+      <div class="auth-divider"><span data-i18n="login_or">أو</span></div>
+      <button class="auth-bio-btn" id="authBioBtn" onclick="window._authBiometric()">
+        <span id="authBioIcon">👆</span>
+        <span id="authBioText" data-i18n="login_bio">تسجيل الدخول بالبصمة</span>
+      </button>
+      <div style="text-align:center;margin-top:8px">
+        <span style="font-size:0.68rem;color:#bbb;cursor:pointer" onclick="window._authResetBio()" data-i18n="login_bio_reset">إعادة تسجيل البصمة</span>
+      </div>
+    </div>
+
+    <div class="auth-attempts" id="authAttempts"></div>
+    <div class="auth-setup-hint" id="authSetupHint" style="display:none" onclick="window._authShowSetup()" data-i18n="login_change_password_hint">
+      🔑 تغيير كلمة المرور
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════
+//  AUTH SYSTEM — Password + WebAuthn Biometrics
+// ══════════════════════════════════════════════════════
+(function() {
+  const AUTH_KEY   = 'finauth_hash_v1';
+  const BIO_KEY    = 'finauth_bio_v1';
+  const LOCK_KEY   = 'finauth_locked_until';
+  const SESS_KEY   = 'finauth_session';
+  const REMEMBER_KEY = 'finauth_remember_until';
+  const MAX_TRIES  = 5;
+  const LOCK_MINS  = 5;
+
+  // ── Helpers ──
+  async function hashPassword(pwd) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pwd + 'finvisa_salt_2025'));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+  }
+
+  function getAttempts() { return parseInt(localStorage.getItem('finauth_attempts') || '0'); }
+  function setAttempts(n) { localStorage.setItem('finauth_attempts', n); }
+  function isLocked() {
+    const until = parseInt(localStorage.getItem(LOCK_KEY) || '0');
+    return Date.now() < until;
+  }
+  function getLockRemaining() {
+    const until = parseInt(localStorage.getItem(LOCK_KEY) || '0');
+    return Math.max(0, Math.ceil((until - Date.now()) / 60000));
+  }
+  function lockAccount() {
+    localStorage.setItem(LOCK_KEY, Date.now() + LOCK_MINS * 60 * 1000);
+  }
+  function hasPassword() { return !!localStorage.getItem(AUTH_KEY); }
+  function hasBio() { return localStorage.getItem(BIO_KEY) === '1'; }
+  function setSession() {
+    sessionStorage.setItem(SESS_KEY, '1');
+    // لو "تذكرني" محدد، احفظ في localStorage لمدة 7 أيام
+    const rem = document.getElementById('authRememberMe');
+    if (rem && rem.checked) {
+      localStorage.setItem(REMEMBER_KEY, Date.now() + 7 * 24 * 60 * 60 * 1000);
+    }
+  }
+  function hasSession() {
+    if (sessionStorage.getItem(SESS_KEY) === '1') return true;
+    // تحقق من "تذكرني"
+    const until = parseInt(localStorage.getItem(REMEMBER_KEY) || '0');
+    if (Date.now() < until) return true;
+    return false;
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('authError');
+    el.textContent = msg; el.classList.add('show');
+    document.getElementById('authPasswordInput').classList.add('error');
+    document.getElementById('authBox').classList.add('shake');
+    setTimeout(() => document.getElementById('authBox').classList.remove('shake'), 400);
+  }
+  function clearError() {
+    document.getElementById('authError').classList.remove('show');
+    document.getElementById('authPasswordInput').classList.remove('error');
+  }
+  function updateAttemptsUI() {
+    const el = document.getElementById('authAttempts');
+    const a = getAttempts();
+    if (a > 0) el.textContent = `محاولات متبقية: ${MAX_TRIES - a}`;
+    else el.textContent = '';
+  }
+
+  function unlockApp() {
+    setSession();
+    setAttempts(0);
+    localStorage.removeItem(LOCK_KEY);
+    const overlay = document.getElementById('authOverlay');
+    overlay.classList.add('hiding');
+    setTimeout(() => { overlay.style.display = 'none'; }, 400);
+    // Show setup hint after login
+    document.getElementById('authSetupHint').style.display = 'block';
+  }
+
+  // ── Setup Mode (first time) ──
+  function showSetupMode() {
+    const dict = (typeof I18N !== 'undefined') ? I18N[APP_LANG] : null;
+    document.getElementById('authSubtitle').textContent = dict ? dict.login_setup_subtitle : 'اختار كلمة مرور للتطبيق';
+    document.getElementById('authPasswordInput').placeholder = dict ? dict.login_setup_password_placeholder : 'كلمة مرور جديدة (6 أحرف على الأقل)';
+    document.getElementById('authPasswordInput').autocomplete = 'new-password';
+    document.getElementById('authSubmitBtn').textContent = dict ? dict.login_setup_submit : 'تعيين كلمة المرور';
+    window._authSubmit = setupPassword;
+  }
+
+  async function setupPassword() {
+    const pwd = document.getElementById('authPasswordInput').value;
+    if (pwd.length < 6) { showError('كلمة المرور قصيرة — 6 أحرف على الأقل'); return; }
+    const hash = await hashPassword(pwd);
+    localStorage.setItem(AUTH_KEY, hash);
+    // Ask to setup biometrics after password set
+    await offerBiometricSetup();
+    unlockApp();
+  }
+
+  // ── Login Mode ──
+  async function loginPassword() {
+    if (isLocked()) {
+      const dict = (typeof I18N !== 'undefined') ? I18N[APP_LANG] : null;
+      showError(dict ? (dict.login_locked_wait_prefix + getLockRemaining() + dict.login_locked_wait_suffix) : `الحساب مغلق — انتظر ${getLockRemaining()} دقيقة`);
+      return;
+    }
+    const pwd = document.getElementById('authPasswordInput').value;
+    if (!pwd) { showError('أدخل كلمة المرور'); return; }
+
+    const btn = document.getElementById('authSubmitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="auth-spinner"></span>';
+
+    const hash = await hashPassword(pwd);
+    const stored = localStorage.getItem(AUTH_KEY);
+
+    if (hash === stored) {
+      clearError();
+      unlockApp();
+      // Offer biometric if not set yet and available
+      if (!hasBio() && await isBiometricAvailable()) {
+        setTimeout(() => offerBiometricSetup(), 500);
+      }
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'دخول';
+      const attempts = getAttempts() + 1;
+      setAttempts(attempts);
+      if (attempts >= MAX_TRIES) {
+        lockAccount();
+        showError(`تم قفل الحساب لمدة ${LOCK_MINS} دقائق`);
+      } else {
+        showError('كلمة المرور غير صحيحة');
+        updateAttemptsUI();
+      }
+      document.getElementById('authPasswordInput').value = '';
+    }
+  }
+
+  // ── Biometric — نظام مبسط يعمل على Brave/Chrome Android ──
+  // الفكرة: نستخدم WebAuthn بس بطريقة "mediation: optional" اللي بتشغّل
+  // البصمة المحلية مباشرة بدون security key dialog
+
+  async function isBiometricAvailable() {
+    try {
+      if (!window.PublicKeyCredential) return false;
+      if (!navigator.credentials) return false;
+      // isConditionalMediationAvailable = الطريقة الحديثة
+      if (PublicKeyCredential.isConditionalMediationAvailable) {
+        const cma = await PublicKeyCredential.isConditionalMediationAvailable();
+        if (cma) return true;
+      }
+      return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+    } catch { return false; }
+  }
+
+  async function registerBiometric() {
+    try {
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      const userId = crypto.getRandomValues(new Uint8Array(16));
+      // نستخدم rpId = hostname فقط (بدون path)
+      const rpId = location.hostname;
+      const cred = await navigator.credentials.create({
+        publicKey: {
+          challenge,
+          rp: { name: 'Vault', id: rpId },
+          user: { id: userId, name: 'khazinaty_owner', displayName: 'المستخدم' },
+          pubKeyCredParams: [
+            { type: 'public-key', alg: -7 },   // ES256
+            { type: 'public-key', alg: -257 },  // RS256
+          ],
+          authenticatorSelection: {
+            authenticatorAttachment: 'platform',
+            userVerification: 'required',
+            residentKey: 'required',
+            requireResidentKey: true
+          },
+          timeout: 60000,
+          attestation: 'none'
+        }
+      });
+      if (cred) {
+        localStorage.setItem(BIO_KEY, '1');
+        // نحفظ الـ credentialId مشفر
+        const rawId = btoa(String.fromCharCode(...new Uint8Array(cred.rawId)));
+        localStorage.setItem('finauth_cred_id', rawId);
+        localStorage.setItem('finauth_rp_id', rpId);
+        return true;
+      }
+    } catch(e) {
+      console.warn('Bio register:', e.name, e.message);
+      if (e.name === 'InvalidStateError') {
+        // مسجّل قبل كده — تمام
+        localStorage.setItem(BIO_KEY, '1');
+        return true;
+      }
+      if (e.name === 'NotAllowedError') return false; // المستخدم رفض
+    }
+    return false;
+  }
+
+  async function offerBiometricSetup() {
+    if (!(await isBiometricAvailable())) return;
+    const ok = confirm('تفعيل تسجيل الدخول بالبصمة على هذا الجهاز؟');
+    if (!ok) return;
+    const success = await registerBiometric();
+    if (success) alert('✅ تم تفعيل البصمة');
+    else alert('⚠️ لم يتم — جرّب مرة ثانية أو استخدم كلمة المرور');
+  }
+
+  async function authBiometric() {
+    const bioBtn = document.getElementById('authBioBtn');
+    if (bioBtn) { bioBtn.disabled = true; bioBtn.style.opacity = '0.7'; }
+    try {
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      const rpId = localStorage.getItem('finauth_rp_id') || location.hostname;
+      const credIdStr = localStorage.getItem('finauth_cred_id');
+
+      const allowCreds = credIdStr ? [{
+        type: 'public-key',
+        id: Uint8Array.from(atob(credIdStr), c => c.charCodeAt(0)),
+        transports: ['internal']
+      }] : [];
+
+      const assertion = await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          rpId,
+          allowCredentials: allowCreds,
+          userVerification: 'required',
+          timeout: 60000
+        }
+        // ملحوظة: شيلنا mediation:'silent' — مش مدعوم مع WebAuthn وكان بيسبب NotAllowedError صامت في Brave/Chrome أندرويد.
+        // الافتراضي (optional) بيظهر واجهة النظام بشكل ثابت عند الضغط على زر البصمة.
+      });
+      if (assertion) { unlockApp(); return; }
+    } catch(e) {
+      console.warn('Bio auth:', e.name, e.message);
+      if (e.name === 'NotAllowedError') {
+        // المستخدم رفض أو timeout — لا تظهر error
+      } else if (e.name === 'SecurityError' || e.name === 'AbortError') {
+        // Brave blocking — أظهر رسالة واسمح بإعادة التسجيل
+        showError('البصمة مش متاحة — اضغط "إعادة تسجيل" وجرّب');
+      } else if (e.name === 'NotFoundError') {
+        // الـ credential اتمسح — اعرض إعادة تسجيل
+        showError('البصمة انتهت — اضغط "إعادة تسجيل البصمة"');
+        localStorage.removeItem(BIO_KEY);
+        localStorage.removeItem('finauth_cred_id');
+      } else {
+        showError('فشلت البصمة — جرّب كلمة المرور');
+      }
+    } finally {
+      if (bioBtn) { bioBtn.disabled = false; bioBtn.style.opacity = '1'; }
+    }
+  }
+
+  // ── Change Password ──
+  window._authShowSetup = async function() {
+    const current = prompt('أدخل كلمة المرور الحالية:');
+    if (!current) return;
+    const hash = await hashPassword(current);
+    if (hash !== localStorage.getItem(AUTH_KEY)) { alert('كلمة المرور الحالية غير صحيحة'); return; }
+    const newPwd = prompt('أدخل كلمة المرور الجديدة (6 أحرف على الأقل):');
+    if (!newPwd || newPwd.length < 6) { alert('كلمة المرور قصيرة جداً'); return; }
+    const newHash = await hashPassword(newPwd);
+    localStorage.setItem(AUTH_KEY, newHash);
+    localStorage.removeItem(REMEMBER_KEY);
+    alert('✅ تم تغيير كلمة المرور');
+  };
+
+  // ── Expose to HTML buttons ──
+  window._authSubmit    = loginPassword;
+  window._authBiometric = authBiometric;
+  window._authResetBio  = async function() {
+    if (!confirm('إعادة تسجيل البصمة؟ ستحتاج لإدخال كلمة المرور مرة.')) return;
+    localStorage.removeItem(BIO_KEY);
+    localStorage.removeItem('finauth_cred_id');
+    localStorage.removeItem('finauth_rp_id');
+    document.getElementById('authBioSection').style.display = 'none';
+    alert('تم حذف البصمة — سجّل الدخول باستخدام كلمة المرور وسيُطلب منك تسجيل بصمة جديدة');
+  };
+
+  // ── Init ──
+  async function init() {
+    // Already authenticated this session
+    if (hasSession()) { unlockApp(); return; }
+
+    // First time — no password set
+    if (!hasPassword()) { showSetupMode(); return; }
+
+    // Locked out
+    if (isLocked()) {
+      const dict = (typeof I18N !== 'undefined') ? I18N[APP_LANG] : null;
+      document.getElementById('authSubtitle').textContent = dict ? (dict.login_locked_prefix + getLockRemaining() + dict.login_locked_suffix) : `الحساب مغلق لمدة ${getLockRemaining()} دقيقة`;
+      document.getElementById('authSubmitBtn').disabled = true;
+      return;
+    }
+
+    // Show biometric button if available
+    const bioAvail = await isBiometricAvailable();
+    if (bioAvail && hasBio()) {
+      document.getElementById('authBioSection').style.display = 'block';
+      const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
+      document.getElementById('authBioIcon').textContent = isMobile ? '🔏' : '🪟';
+      document.getElementById('authBioText').textContent = isMobile ? 'تسجيل الدخول بالبصمة' : 'تسجيل الدخول بـ Windows Hello';
+      // Auto-trigger biometric on mobile
+      if (isMobile) setTimeout(() => authBiometric(), 600);
+    }
+
+    // Show setup hint
+    document.getElementById('authSetupHint').style.display = 'block';
+    updateAttemptsUI();
+    document.getElementById('authPasswordInput').focus();
+  }
+
+  init();
+})();
+</script>
+
+
+<div class="header">
+
+  <!-- Brand -->
+  <div class="header-brand">
+    <div class="header-brand-icon" id="headerBrandIcon">
+      <svg class="mz-logo " viewBox="0 0 100 100" width="34" height="34" role="img" aria-label="Vault"><rect width="100" height="100" rx="22" fill="url(#mzTile)"/><circle class="mz-glow" cx="50" cy="50" r="42" fill="url(#mzGlow)"/><rect x="4" y="29" width="92" height="42" rx="21" fill-opacity=".55" stroke-opacity=".6" stroke-width=".8" style="fill:var(--lg-b3);stroke:var(--lg-b2)"/><rect x="10" y="38.4" width="17" height="2.4" rx="1.2" fill-opacity=".7" style="fill:var(--lg-t1)"/><rect x="10" y="59.2" width="17" height="2.4" rx="1.2" fill-opacity=".7" style="fill:var(--lg-t1)"/><rect x="73" y="38.4" width="17" height="2.4" rx="1.2" fill-opacity=".7" style="fill:var(--lg-t1)"/><rect x="73" y="59.2" width="17" height="2.4" rx="1.2" fill-opacity=".7" style="fill:var(--lg-t1)"/><g transform="translate(50 50) scale(1.04) translate(-50 -50)"><circle cx="50" cy="50" r="31" stroke-opacity=".85" stroke-width="1" style="fill:url(#mzMetal);stroke:var(--lg-b1)"/><g class="mz-dial"><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(0)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(30)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(60)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(90)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(120)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(150)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(180)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(210)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(240)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(270)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(300)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/><rect x="-3.9" y="-25.8" width="7.8" height="8.4" rx="1.3" transform="translate(50 50) rotate(330)" fill-opacity=".92" stroke-width=".5" style="fill:var(--lg-b1);stroke:var(--lg-b3)"/></g><circle cx="57.43" cy="22.28" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="70.29" cy="29.71" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="77.72" cy="42.57" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="77.72" cy="57.43" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="70.29" cy="70.29" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="57.43" cy="77.72" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="42.57" cy="77.72" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="29.71" cy="70.29" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="22.28" cy="57.43" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="22.28" cy="42.57" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="29.71" cy="29.71" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="42.57" cy="22.28" r="1.05" fill-opacity=".9" style="fill:var(--lg-s1)"/><circle cx="50" cy="50" r="15.6" stroke-width=".9" style="fill:var(--lg-t1);stroke:var(--lg-b2)"/><circle cx="50" cy="50" r="12.4" stroke-width="1.5" style="fill:var(--lg-t2);stroke:var(--lg-s1)"/><circle cx="50" cy="50" r="10.4" fill-opacity=".30" style="fill:var(--lg-s2)"/><g transform="translate(50.5 50)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="fill:none;stroke:var(--lg-s1)"><circle cx="-2.4" cy="-2.7" r="3.1"/><path d="M0.7 -2.7C0.7 1.6 -0.7 4.4 -3.7 5.9"/><path d="M2.3 -3.9L4.6 -6V6"/></g></g></svg>
+    </div>
+    <div class="header-brand-text">
+      <div class="header-brand-name" data-i18n="brand_name">Vault</div>
+      <div class="header-brand-month" id="headerMonthLabel">—</div>
+    </div>
+    <!-- Sync status: compact dot next to brand, text only shown via title/tap -->
+    <div class="header-sync-mini" id="fbSyncStatus" title="حالة المزامنة">
+      <span class="sync-dot" id="syncDot" style="background:#b08040"></span>
+      <span class="sync-text" id="syncText">جاري...</span>
+    </div>
+  </div>
+
+  <!-- Stats strip removed -->
+  <div class="header-stats" id="headerStats" style="display:none"></div>
+
+  <!-- Actions -->
+  <div class="header-actions">
+
+    <!-- All action buttons live here — shown inline on mobile as compact icons -->
+    <div id="hdrBtnsWrap" style="display:contents">
+
+    <!-- Group 1: info / glance -->
+    <div class="hdr-group">
+      <!-- Glance dropdown -->
+      <div style="position:relative" id="glanceDropWrap">
+        <button class="hbtn glance" onclick="toggleGlanceDropdown()" id="glanceBtn"><svg class="hicon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg><span class="hbtn-text" data-i18n="hdr_glance"> ملخص</span></button>
+        <div id="glanceDropdown" class="hdr-dropdown" style="display:none">
+          <div class="hdr-dropdown-handle"></div>
+          <div class="hdr-dropdown-sticky">
+            <div class="hdr-dropdown-head">
+              <div style="font-size:0.9rem;font-weight:800;color:var(--accent)"><svg class="hicon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> ملخص الشهر السريع</div>
+              <button class="hdr-dropdown-close" onclick="closeGlanceDropdown()">✕</button>
+            </div>
+          </div>
+          <div class="hdr-dropdown-scroll"><div id="glanceDropContent"></div></div>
+        </div>
+      </div>
+
+      <!-- Due dates dropdown -->
+      <div style="position:relative" id="dueDropWrap">
+        <button class="hbtn due" onclick="toggleDueDropdown()" id="dueDropBtn">
+          <svg class="hicon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 1 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><span class="hbtn-text" data-i18n="hdr_due"> مواعيد</span>
+          <span id="dueNotifBadge" class="notif-badge"></span>
+        </button>
+        <div id="dueDropdown" class="hdr-dropdown" style="display:none">
+          <div class="hdr-dropdown-handle"></div>
+          <div class="hdr-dropdown-sticky">
+            <div class="hdr-dropdown-head">
+              <div style="font-size:0.9rem;font-weight:800;color:var(--text2)"><span style="font-size:16px;display:inline-block;vertical-align:middle;line-height:1">⏰</span> المواعيد القادمة</div>
+              <button class="hdr-dropdown-close" onclick="closeDueDropdown()">✕</button>
+            </div>
+            <div style="margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid var(--border);display:flex;justify-content:flex-end">
+              <button onclick="closeDueDropdown();const t=document.querySelector('.tab[onclick*=reminders]');if(t)showPage('reminders',t);" style="font-size:0.72rem;font-weight:700;padding:5px 10px;border-radius:7px;border:none;background:var(--accent);color:#fff;cursor:pointer;white-space:nowrap;min-height:36px">📌 إضافة / إدارة تذكيراتي</button>
+            </div>
+          </div>
+          <div class="hdr-dropdown-scroll"><div id="dueDropContent"></div></div>
+        </div>
+      </div>
+    </div>
+    <!-- Backdrop مشترك بين الدروب داونز التنين — بيبان بس في وضع الـ bottom sheet على الموبايل (الديسكتوب مالوش backdrop خالص، الـ CSS بيتحكم في ده) -->
+    <div class="hdr-dropdown-backdrop" id="hdrDropdownBackdrop" onclick="closeGlanceDropdown();closeDueDropdown();"></div>
+
+    <div class="hdr-divider"></div>
+
+    <!-- Group 2: tools -->
+    <div class="hdr-group">
+      <!-- Tutorial Button -->
+      <button class="hbtn" id="hdrTutorialBtn" onclick="showTutorialModal()" title="شرح استخدام التطبيق" style="font-size:1rem;padding:5px 10px"><svg class="hicon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M9.2 9.3a2.9 2.9 0 0 1 5.6 1c0 1.9-2.8 2.4-2.8 4"/><circle cx="12" cy="17.6" r=".6" fill="currentColor"/></svg></button>
+
+      <!-- Export Button -->
+      <button class="hbtn" id="hdrExportBtn" onclick="showExportModal()" title="تصدير البيانات" data-i18n-title="hdr_export_title" style="font-size:1rem;padding:5px 10px"><svg class="hicon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10.5l5 5 5-5M4 20h16"/></svg></button>
+
+      <!-- More menu: theme + language -->
+      <div style="position:relative" id="hdrMoreWrap">
+        <button class="hbtn" onclick="toggleHdrMore()" id="hdrMoreBtn" title="المزيد" style="font-size:1rem;padding:5px 10px">⋮</button>
+        <div id="hdrMoreDropdown" style="display:none;position:fixed;top:57px;left:auto;right:8px;width:200px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,0.18);z-index:9000;padding:10px">
+          <div style="font-size:0.78rem;font-weight:800;color:var(--text2);margin-bottom:8px;padding:0 4px">⚙️ إعدادات</div>
+
+          <!-- نسخة من زراري "شرح الاستخدام" و"تصدير" بتبان بس في الشاشات الضيقة جدًا (بورتريه) —
+               بنخفي النسختين التوأم دول في الهيدر نفسه في الشاشات الضيقة عشان نوفّر مساحة كافية لزرار الجرس/المواعيد، وهنا هما لسه متاحين -->
+          <button class="hbtn hdr-more-narrow-only" onclick="toggleHdrMore();showTutorialModal()" title="شرح استخدام التطبيق" style="width:100%;justify-content:flex-start;margin-bottom:6px"><svg class="hicon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M9.2 9.3a2.9 2.9 0 0 1 5.6 1c0 1.9-2.8 2.4-2.8 4"/><circle cx="12" cy="17.6" r=".6" fill="currentColor"/></svg><span class="hbtn-text"> شرح الاستخدام</span></button>
+          <button class="hbtn hdr-more-narrow-only" onclick="toggleHdrMore();showExportModal()" title="تصدير البيانات" style="width:100%;justify-content:flex-start;margin-bottom:6px"><svg class="hicon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10.5l5 5 5-5M4 20h16"/></svg><span class="hbtn-text"> تصدير البيانات</span></button>
+
+          <!-- Theme Picker (relocated) -->
+          <div style="position:relative" id="themeDropWrap">
+            <button class="hbtn" onclick="toggleThemeDrop()" id="themeBtn" title="تغيير لون الصفحة" data-i18n-title="hdr_theme_title" style="width:100%;justify-content:flex-start;margin-bottom:6px"><span style="font-size:16px;display:inline-block;vertical-align:middle;line-height:1">🎨</span><span class="hbtn-text"> لون الصفحة</span></button>
+            <div id="themeDropdown" style="display:none;position:fixed;top:57px;left:auto;right:8px;width:200px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,0.18);z-index:9100;padding:10px">
+              <div style="font-size:0.78rem;font-weight:800;color:var(--text2);margin-bottom:8px;padding:0 4px">🎨 لون الصفحة</div>
+              <div id="themeOptions" style="display:flex;flex-direction:column;gap:5px"></div>
+            </div>
+          </div>
+
+          <!-- Language Toggle (relocated) -->
+          <button class="hbtn" onclick="toggleLanguage()" id="langToggleBtn" title="Language / اللغة" style="width:100%;justify-content:flex-start">🌐 <span class="hbtn-text" id="langToggleLabel">EN</span></button>
+        </div>
+      </div>
+    </div>
+
+    </div><!-- end hdrBtnsWrap -->
+
+    <input type="file" id="importFile" accept=".json,.xlsx,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none" onchange="importJSON(event)">
+  </div>
+
+</div>
+
+<script>
+// Buttons stay in header always — CSS handles compact icon-only layout on mobile
+window.toggleHdrOverflow = function() {}; // no-op (overflow panel removed)
+</script>
+
+<script>
+// نقل دروب-داون "الملخص" و"المواعيد" (وخلفيتهم المشتركة) عشان يبقوا أولاد مباشرين لـ body
+// بدل ما يفضلوا جوه .header. السبب: .header عليه backdrop-filter، وبعض المتصفحات
+// (خصوصًا على الموبايل) بتعامل أي عنصر عليه backdrop-filter كـ containing block لأي
+// عنصر جواه بـ position:fixed — فبدل ما الدروب-داون يتمركز بالنسبة للشاشة كلها، كان
+// بيتمركز بالنسبة لـ .header نفسه (اللي ارتفاعه ~55px بس)، فكان بيبان مقصوص/متزنق فوق
+// في الموبايل (وضع Bottom Sheet)، مع إنه شغال عادي على الشاشات الأعرض (لاندسكيب/تابلت)
+// لأن هناك بيتمركز بـ top:57px مش bottom:0.
+(function relocateHeaderDropdowns() {
+  var body = document.body;
+  ['glanceDropdown', 'dueDropdown', 'hdrDropdownBackdrop'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el && el.parentNode !== body) body.appendChild(el);
+  });
+})();
+
+// سحب المقبض لتحت لقفل الشيت (Bottom Sheet) بإيد واحدة — شغالة بس في وضع الموبايل (≤600px)،
+// وعلى الديسكتوب النافذة بتفضل زي ما هي (عائمة في النص) فالسحب متعطل تلقائيًا.
+function _attachSheetDrag(sheetId, closeFn) {
+  var sheet = document.getElementById(sheetId);
+  var handle = sheet && sheet.querySelector('.hdr-dropdown-handle');
+  if (!handle) return;
+  var startY = 0, dy = 0, dragging = false;
+  function isSheetMode() { return window.matchMedia('(max-width: 600px)').matches; }
+  handle.addEventListener('touchstart', function(e) {
+    if (!isSheetMode()) return;
+    dragging = true; dy = 0;
+    startY = e.touches[0].clientY;
+    sheet.classList.add('dragging');
+  }, { passive: true });
+  handle.addEventListener('touchmove', function(e) {
+    if (!dragging) return;
+    dy = Math.max(0, e.touches[0].clientY - startY);
+    sheet.style.transform = 'translateY(' + dy + 'px)';
+  }, { passive: true });
+  function endDrag() {
+    if (!dragging) return;
+    dragging = false;
+    sheet.classList.remove('dragging');
+    var threshold = Math.min(sheet.offsetHeight * 0.28, 130);
+    if (dy > threshold) { closeFn(); } else { sheet.style.transform = ''; }
+    dy = 0;
+  }
+  handle.addEventListener('touchend', endDrag);
+  handle.addEventListener('touchcancel', endDrag);
+}
+_attachSheetDrag('glanceDropdown', function() { closeGlanceDropdown(); });
+_attachSheetDrag('dueDropdown', function() { closeDueDropdown(); });
+</script>
+
+<script>
+// ══════════════════════════════════════════
+// LANGUAGE SYSTEM — عربي / English
+// بيترجم واجهة التطبيق فقط (عناوين، أزرار، عناوين أعمدة) — من غير ما يلمس
+// أي بيانات اتكتبت يدويًا زي أسماء الصناديق أو الملاحظات، لأنها متخزنة كقيم inputs
+// مش كنصوص DOM، فمش هتتأثر خالص بتبديل اللغة.
+// ══════════════════════════════════════════
+const I18N = {
+  ar: {
+    brand_name: 'Vault',
+    tab_budget: 'ميزانيتي',
+    tab_visa: 'الفيزا',
+    tab_wallets: 'المحافظ',
+    tab_certs: 'شهادات وصناديق',
+    tab_offers: 'العروض والنقاط',
+    tab_debts: 'المديونيات',
+    tab_reports: 'التقارير',
+    login_subtitle: 'أدخل كلمة المرور للمتابعة',
+    login_setup_subtitle: 'اختار كلمة مرور للتطبيق',
+    login_password_placeholder: 'كلمة المرور',
+    login_setup_password_placeholder: 'كلمة مرور جديدة (6 أحرف على الأقل)',
+    login_remember_me: 'تذكرني لمدة 7 أيام',
+    login_submit: 'دخول',
+    login_setup_submit: 'تعيين كلمة المرور',
+    login_or: 'أو',
+    login_bio: 'تسجيل الدخول بالبصمة',
+    login_bio_reset: 'إعادة تسجيل البصمة',
+    login_change_password_hint: '🔑 تغيير كلمة المرور',
+    login_locked_prefix: 'الحساب مغلق لمدة ',
+    login_locked_suffix: ' دقيقة',
+    login_locked_wait_prefix: 'الحساب مغلق — انتظر ',
+    login_locked_wait_suffix: ' دقيقة',
+    google_sub_line1: 'سجّل دخولك بحساب Google',
+    google_sub_line2: 'عشان بياناتك تتزامن على كل أجهزتك',
+    google_signin_btn: 'تسجيل الدخول بـ Google',
+    google_privacy_note: '🔒 بياناتك خاصة بيك بس',
+    hdr_glance: ' ملخص',
+    hdr_due: ' مواعيد',
+    hdr_export_title: 'تصدير البيانات',
+    hdr_theme_title: 'تغيير لون الصفحة',
+    common_add: '+ إضافة',
+    common_total: 'الإجمالي',
+    funds_title: '📦 الصناديق الاستثمارية',
+    funds_th_name: 'اسم الصندوق',
+    funds_th_amount: 'المبلغ ج.م',
+    funds_th_rate: 'النسبة اليومية %',
+    funds_th_deposit: 'تاريخ الإيداع',
+    funds_th_withdraw: 'تاريخ السحب',
+    funds_th_cumulative: 'العائد التراكمي',
+    funds_th_monthly: 'العائد الشهري المركب',
+    wallets_title: '👛 المحافظ والحسابات',
+    wallets_empty: 'لا توجد محافظ.',
+    wallets_limit_label: 'الحد:',
+    wallets_currency: 'ج.م',
+    wallets_used: 'مستخدم',
+    wallets_available: 'متاح',
+    wallets_add_used_amount: 'إضافة مبلغ مستخدم:',
+    wallets_desc_placeholder: 'البيان (اختياري)',
+    wallets_amount_placeholder: 'المبلغ',
+    wallets_no_desc: 'بدون بيان',
+    wallets_no_items: 'لا توجد بنود',
+    wallets_reset: '🔄 تصفير',
+    wallets_total_movements: 'إجمالي الحركات:',
+    wallets_selected_label: 'المحافظ المحددة:',
+    wallets_total_remaining: 'إجمالي المتبقي',
+    wallets_clear: 'مسح',
+    wallets_name_placeholder: 'اسم المحفظة',
+    wallets_compare_title: 'حدد للمقارنة',
+    wallets_delete_confirm: 'هل تريد حذف هذه المحفظة؟',
+    wallets_invalid_amount: '❌ أدخل مبلغ صحيح',
+    wallets_added: '✅ تمت الإضافة',
+    export_modal_title: '⬇ تصدير البيانات',
+    export_file_type: 'نوع الملف',
+    export_data_range: 'نطاق البيانات',
+    export_all_months: '📅 كل الشهور',
+    export_loading: 'جاري التحميل…',
+    export_one_month: '📆 شهر واحد',
+    export_select_from_list: 'اختر من القائمة',
+    export_choose_month: 'اختر الشهر',
+    export_do_btn: '⬇ تصدير الآن',
+    export_months_count_suffix: 'شهر مسجل',
+
+    tut_title: '❓ دليل استخدام التطبيق',
+    tut_close: 'فهمت، إغلاق',
+    tut_budget_h: '💻 ميزانيتي',
+    tut_budget_p: 'تقسيم شهري بين دخل ومصروفات حسب تصنيفات (بيت، عربية، شخصية...). اضغط "دخل" أو "مصروفات" لإضافة عملية، واختار التصنيف. تقدر تعمل "تصنيف جديد" أو تدخل "تعديل التصنيفات" عشان تحذف/تسمي/ترتب التصنيفات بالسحب أو بالأسهم.',
+    tut_visa_h: '💳 الفيزا',
+    tut_visa_p: 'متابعة كروت الفيزا: المبلغ المطلوب سداده والمسدد فعليًا والمتبقي. زرار "🔴 عليها فلوس" بيفلتر الكروت اللي لسه مديون بيها بس. زرار "⇅" بيرتب الكروت (افتراضي / الأحدث / الأقرب استحقاقًا).',
+    tut_certs_h: '🏦 شهادات وصناديق',
+    tut_certs_p: 'الشهادات البنكية (ثابتة / متناقصة / متغيرة) بيتحسب عائدها الشهري تلقائيًا. الصناديق الاستثمارية بيتحسب عائدها بمعدل يومي مركّب، وممكن تسحب منها وتسجل السحب في الشهر المناسب.',
+    tut_wallets_h: '👛 المحافظ',
+    tut_wallets_p: 'أماكن تجميع الفلوس (كاش، حساب بنكي...) بعيدًا عن الفيزا والشهادات، عشان تعرف فلوسك موزّعة فين بالظبط.',
+    tut_debts_h: '📋 المديونيات',
+    tut_debts_p: 'قروض وأقساط بره الفيزا. كل مديونية ليها قسط شهري ويوم استحقاق. اضغط "سداد جزئي" لتسجيل دفعة، وزرار "🔴 لم يسدد" بيفلتر اللي لسه ما دفعش قسط الشهر الحالي.',
+    tut_offers_h: '♡ العروض',
+    tut_offers_p: 'حفظ عروض أو أفكار شراء عايز ترجعلها بعدين، من غير ما تدخلها في الميزانية لحد ما تقرر.',
+    tut_reports_h: '📈 التقارير',
+    tut_reports_p: 'ملخصات وجداول لكل حاجة (فيزا، شهادات، مديونيات) على شكل جدول قابل للتصدير، عشان تشوف الصورة الكاملة بسرعة.',
+    tut_export_h: '⬇ التصدير',
+    tut_export_p: 'زرار السهم لتحت في الهيدر بيصدّرلك ملف Excel/PDF لبياناتك.',
+    tut_tips_h: 'نصائح عامة',
+    tut_tips_p: '🎨 زرار الفرشاة بيغيّر شكل الألوان. 🔔 زرار الجرس بيوريك المواعيد المستحقة القريبة. اضغط ضغطة مطوّلة على أي تاب فوق أو تصنيف عشان تسحبه وتغيّر ترتيبه.',
+  },
+  en: {
+    brand_name: 'Vault',
+    tab_budget: 'My Budget',
+    tab_visa: 'Visa',
+    tab_wallets: 'Wallets',
+    tab_certs: 'Certificates & Funds',
+    tab_offers: 'Offers',
+    tab_debts: 'Debts',
+    tab_reports: 'Reports',
+    login_subtitle: 'Enter your password to continue',
+    login_setup_subtitle: 'Choose a password for the app',
+    login_password_placeholder: 'Password',
+    login_setup_password_placeholder: 'New password (at least 6 characters)',
+    login_remember_me: 'Remember me for 7 days',
+    login_submit: 'Login',
+    login_setup_submit: 'Set Password',
+    login_or: 'or',
+    login_bio: 'Sign in with fingerprint',
+    login_bio_reset: 'Re-register fingerprint',
+    login_change_password_hint: '🔑 Change password',
+    login_locked_prefix: 'Account locked for ',
+    login_locked_suffix: ' minutes',
+    login_locked_wait_prefix: 'Account locked — wait ',
+    login_locked_wait_suffix: ' minutes',
+    google_sub_line1: 'Sign in with your Google account',
+    google_sub_line2: 'So your data syncs across all your devices',
+    google_signin_btn: 'Sign in with Google',
+    google_privacy_note: '🔒 Your data is private to you',
+    hdr_glance: ' Summary',
+    hdr_due: ' Due Dates',
+    hdr_export_title: 'Export Data',
+    hdr_theme_title: 'Change page color',
+    common_add: '+ Add',
+    common_total: 'Total',
+    funds_title: '📦 Investment Funds',
+    funds_th_name: 'Fund Name',
+    funds_th_amount: 'Amount EGP',
+    funds_th_rate: 'Daily Rate %',
+    funds_th_deposit: 'Deposit Date',
+    funds_th_withdraw: 'Withdrawal Date',
+    funds_th_cumulative: 'Cumulative Return',
+    funds_th_monthly: 'Compound Monthly Return',
+    wallets_title: '👛 Wallets & Accounts',
+    wallets_empty: 'No wallets.',
+    wallets_limit_label: 'Limit:',
+    wallets_currency: 'EGP',
+    wallets_used: 'Used',
+    wallets_available: 'Available',
+    wallets_add_used_amount: 'Add used amount:',
+    wallets_desc_placeholder: 'Note (optional)',
+    wallets_amount_placeholder: 'Amount',
+    wallets_no_desc: 'No description',
+    wallets_no_items: 'No items',
+    wallets_reset: '🔄 Reset',
+    wallets_total_movements: 'Total movements:',
+    wallets_selected_label: 'Selected wallets:',
+    wallets_total_remaining: 'Total Remaining',
+    wallets_clear: 'Clear',
+    wallets_name_placeholder: 'Wallet name',
+    wallets_compare_title: 'Select to compare',
+    wallets_delete_confirm: 'Delete this wallet?',
+    wallets_invalid_amount: '❌ Enter a valid amount',
+    wallets_added: '✅ Added successfully',
+    export_modal_title: '⬇ Export Data',
+    export_file_type: 'File Type',
+    export_data_range: 'Data Range',
+    export_all_months: '📅 All Months',
+    export_loading: 'Loading…',
+    export_one_month: '📆 One Month',
+    export_select_from_list: 'Select from list',
+    export_choose_month: 'Choose Month',
+    export_do_btn: '⬇ Export Now',
+    export_months_count_suffix: 'months recorded',
+
+    tut_title: '❓ App User Guide',
+    tut_close: 'Got it, Close',
+    tut_budget_h: '💻 My Budget',
+    tut_budget_p: 'Split your month between income and expenses by category (Home, Car, Personal...). Tap "Income" or "Expenses" to add an entry and pick a category. You can add a "New Category" or enter "Edit Categories" to delete/rename/reorder categories by dragging or with the arrows.',
+    tut_visa_h: '💳 Visa',
+    tut_visa_p: 'Track your Visa cards: required payment, amount already paid, and remaining balance. The "🔴 Owes Money" button filters cards that still have a balance due. The "⇅" button sorts cards (default / newest / closest due date).',
+    tut_certs_h: '🏦 Certificates & Funds',
+    tut_certs_p: 'Bank certificates (fixed / declining / variable) have their monthly return calculated automatically. Investment funds accrue returns using a compounded daily rate, and you can withdraw from them and log the withdrawal under the right month.',
+    tut_wallets_h: '👛 Wallets',
+    tut_wallets_p: 'Places where you keep money (cash, bank account...) separate from Visa cards and certificates, so you know exactly where your money is distributed.',
+    tut_debts_h: '📋 Debts',
+    tut_debts_p: 'Loans and installments outside of Visa. Each debt has a monthly installment and a due day. Tap "Partial Payment" to log a payment, and the "🔴 Unpaid" button filters entries that have not paid this month\'s installment yet.',
+    tut_offers_h: '♡ Offers',
+    tut_offers_p: 'Save deals or purchase ideas you want to revisit later, without adding them to the budget until you decide.',
+    tut_reports_h: '📈 Reports',
+    tut_reports_p: 'Summaries and tables for everything (Visa, certificates, debts) as an exportable table, so you can see the full picture quickly.',
+    tut_export_h: '⬇ Export',
+    tut_export_p: 'The down-arrow button in the header exports your data as an Excel/PDF file.',
+    tut_tips_h: 'General Tips',
+    tut_tips_p: '🎨 The brush button changes the color theme. 🔔 The bell button shows upcoming due dates. Long-press any tab up top or any category to drag and reorder it.',
+  },
+};
+
+let APP_LANG = localStorage.getItem('appLang') || 'ar';
+
+// يُستخدم في كل أماكن تنسيق الأرقام والتواريخ — دايمًا أرقام إنجليزية بغض النظر عن لغة الواجهة
+function _numLocale() { return 'en-US'; }
+
+// دالة ترجمة مختصرة تُستخدم داخل الـ JS للنصوص اللي بتتولّد ديناميكيًا (مش عن طريق data-i18n)
+function t(key) {
+  const dict = (typeof I18N !== 'undefined') ? I18N[APP_LANG] : null;
+  return (dict && dict[key] !== undefined) ? dict[key] : key;
+}
+
+function applyLanguage(lang) {
+  APP_LANG = (lang === 'en') ? 'en' : 'ar';
+  localStorage.setItem('appLang', APP_LANG);
+  const dict = I18N[APP_LANG];
+
+  document.documentElement.setAttribute('lang', APP_LANG);
+  // ملاحظة: اتجاه الصفحة (dir) يظل ثابتاً (RTL) في الحالتين، لأن تصميم الواجهة بالكامل يعتمد عليه؛ وتغييره قد يؤدي إلى تشويه المظهر. التغيير يشمل نصوص الواجهة فقط.
+
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (dict[key] !== undefined) el.textContent = dict[key];
+  });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    const key = el.getAttribute('data-i18n-title');
+    if (dict[key] !== undefined) el.title = dict[key];
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    const key = el.getAttribute('data-i18n-placeholder');
+    if (dict[key] !== undefined) el.placeholder = dict[key];
+  });
+
+  const btn = document.getElementById('langToggleLabel') || document.getElementById('langToggleBtn');
+  if (btn) btn.textContent = APP_LANG === 'ar' ? 'EN' : 'AR';
+
+  // إعادة رسم الجداول اللي بتستخدم fmt()/التاريخ عشان الأرقام تتحول لأرقام إنجليزية في وضع EN
+  if (typeof renderFunds === 'function') renderFunds();
+  if (typeof renderWallets === 'function') renderWallets();
+
+  // لو مودال التصدير مفتوح، حدّث نص عدد الشهور (بيتكتب ديناميكيًا فوق data-i18n) بدل ما يفضل على "جاري التحميل…"
+  const expModal = document.getElementById('exportModal');
+  const expCountEl = document.getElementById('expAllCount');
+  if (expModal && expModal.classList.contains('open') && expCountEl && typeof state !== 'undefined') {
+    const n = Object.keys(state).filter(k => /^\d{4}-\d{2}$/.test(k)).length;
+    expCountEl.textContent = n + ' ' + t('export_months_count_suffix');
+  }
+}
+
+function toggleLanguage() {
+  applyLanguage(APP_LANG === 'ar' ? 'en' : 'ar');
+}
+
+document.addEventListener('DOMContentLoaded', () => applyLanguage(APP_LANG));
+</script>
+
+<div class="tabs" id="mainTabs" style="align-items:center">
+  <div class="tab" draggable="true" data-page="budget" onclick="showPage('budget',this)"><svg class="tab-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> <span data-i18n="tab_budget">ميزانيتي</span></div>
+  <div class="tab active" draggable="true" data-page="visa" onclick="showPage('visa',this)"><svg class="tab-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg> <span data-i18n="tab_visa">الفيزا</span></div>
+  <div class="tab" draggable="true" data-page="wallets" onclick="showPage('wallets',this)"><svg class="tab-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6z"/><circle cx="18" cy="12" r="2"/></svg> <span data-i18n="tab_wallets">المحافظ</span></div>
+  <div class="tab" draggable="true" data-page="certs" onclick="showPage('certs',this)"><svg class="tab-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg> <span data-i18n="tab_certs">شهادات وصناديق</span></div>
+  <div class="tab" draggable="true" data-page="offers" onclick="showPage('offers',this)"><svg class="tab-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg> <span data-i18n="tab_offers">العروض والنقاط</span></div>
+  <div class="tab" draggable="true" data-page="debts" onclick="showPage('debts',this)"><svg class="tab-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> <span data-i18n="tab_debts">المديونيات</span></div>
+  <div class="tab" draggable="true" data-page="reminders" onclick="showPage('reminders',this)"><svg class="tab-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> <span>تذكيراتي</span></div>
+
+</div>
+
+<!-- FIXED STICKY SUMMARY BARS (one shown at a time) -->
+<script>
+// ☰ + درج التنقل على طريقة Claude (بيشتغل في كل الثيمات)
+(function () {
+  var tabs = document.getElementById('mainTabs'), header = document.querySelector('.header');
+  if (!tabs || !header || document.getElementById('navToggle')) return;
+  var ICON = function (d) { return '<svg viewBox="0 0 24 24" aria-hidden="true">' + d + '</svg>'; };
+  var btn = document.createElement('button');
+  btn.type = 'button'; btn.id = 'navToggle'; btn.className = 'nav-toggle'; btn.setAttribute('aria-label', 'القائمة');
+  btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>';
+  header.insertBefore(btn, header.firstChild);
+  var bd = document.createElement('div'); bd.id = 'navBackdrop'; bd.className = 'nav-backdrop'; document.body.appendChild(bd);
+  function close() { document.body.classList.remove('nav-open'); }
+  function later(fn) { close(); setTimeout(fn, 260); }
+
+  // كلمة العلامة أعلى القايمة
+  var brand = document.createElement('div'); brand.className = 'nav-brand'; brand.textContent = 'Vault';
+  tabs.insertBefore(brand, tabs.firstChild);
+
+  // اختصارات (نفس أزرار الهيدر)
+  var div = document.createElement('div'); div.className = 'nav-divider'; tabs.appendChild(div);
+  var lbl = document.createElement('div'); lbl.className = 'nav-label'; lbl.textContent = 'اختصارات'; tabs.appendChild(lbl);
+  function row(text, icon, fn) {
+    var r = document.createElement('button'); r.type = 'button'; r.className = 'nav-row';
+    r.innerHTML = ICON(icon) + '<span>' + text + '</span>';
+    r.addEventListener('click', function () { later(fn); });
+    tabs.appendChild(r);
+  }
+  row('ملخص الشهر', '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/>', function () { var b = document.getElementById('glanceBtn'); if (b) b.click(); });
+  row('المواعيد القادمة', '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>', function () { var b = document.getElementById('dueDropBtn'); if (b) b.click(); });
+  row('نسخة احتياطية (تصدير)', '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>', function () { if (typeof exportJSON === 'function') exportJSON(); });
+
+  // الفوتر: زرار الثيم (فاتح/داكن) + كبسولة الإضافة السريعة
+  var foot = document.createElement('div'); foot.className = 'nav-foot';
+  var circ = document.createElement('button'); circ.type = 'button'; circ.className = 'nav-circle'; circ.setAttribute('aria-label', 'تبديل الثيم');
+  var DARK_THEMES = ['claudedark', 'midnight', 'emerald', 'blackgold'];
+  var PAIR = { claude: 'claudedark', gray: 'midnight', mataa: 'midnight', light: 'midnight', mintlight: 'emerald', sandlight: 'blackgold',
+               claudedark: 'claude', midnight: 'gray', emerald: 'mintlight', blackgold: 'sandlight' };
+  function curTheme() { return document.documentElement.getAttribute('data-theme') || 'gray'; }
+  function themeGlyph() { return DARK_THEMES.indexOf(curTheme()) > -1 ? '\u2600' : '\u263E'; }
+  circ.textContent = themeGlyph();
+  circ.addEventListener('click', function () {
+    var next = PAIR[curTheme()] || 'claude';
+    try { localStorage.setItem('appTheme', next); } catch (e) {}
+    if (typeof applyTheme === 'function') applyTheme(next); else document.documentElement.setAttribute('data-theme', next);
+    circ.textContent = themeGlyph();
+  });
+  var pill = document.createElement('button'); pill.type = 'button'; pill.className = 'nav-pill';
+  pill.innerHTML = '<span style="font-size:1.3em;line-height:1">+</span><span>إضافة سريعة</span>';
+  pill.addEventListener('click', function () { later(function () { var f = document.getElementById('fabAdd'); if (f) f.click(); }); });
+  foot.appendChild(circ); foot.appendChild(pill); tabs.appendChild(foot);
+
+  btn.addEventListener('click', function () { circ.textContent = themeGlyph(); document.body.classList.toggle('nav-open'); });
+  bd.addEventListener('click', close);
+  tabs.addEventListener('click', function (e) { if (e.target.closest && e.target.closest('.tab')) close(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+  window.addEventListener('resize', function () { if (window.innerWidth >= 900) close(); });
+})();
+</script>
+
+<div class="content">
+
+  <!-- OVERVIEW PAGE -->
+  <div id="page-overview" class="page">
+
+    <!-- ═══ Smart Stats AI Insight Card ═══ -->
+    <div class="smart-stats-card" id="smartStatsCard">
+      <div class="smart-stats-header">
+        <div class="smart-stats-title">
+          <span>✨</span>
+          Smart Stats
+          <span class="smart-stats-badge">تحليل ذكي</span>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="smart-stats-refresh" id="ssRefreshBtn" onclick="smartStatsRefresh()">
+            <span id="ssRefreshIcon">↻</span> تحديث
+          </button>
+        </div>
+      </div>
+      <div class="smart-stats-body">
+        <!-- Static chips row — always visible, instant -->
+        <div class="smart-stats-chips" id="ssChips"></div>
+        <!-- AI insight text -->
+        <div class="smart-stats-insight" id="ssInsight">
+          <div class="ss-spinner"></div>
+          <span style="font-size:0.78rem;color:var(--muted)">جاري تحليل بياناتك…</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-card">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title"><span style="font-size:16px;display:inline-block;vertical-align:middle;line-height:1">📅</span> ملخص الشهر السريع</div>
+        <span class="collapse-icon open">▼</span>
+      </div>
+      <div class="section-body">
+        <div id="monthGlanceContent" style="padding:14px"></div>
+      </div>
+    </div>
+    <div class="section-card">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title"><span style="font-size:16px;display:inline-block;vertical-align:middle;line-height:1">⏰</span> المواعيد القادمة</div>
+        <span class="collapse-icon open">▼</span>
+      </div>
+      <div class="section-body">
+        <div id="dueContent" style="padding:14px"></div>
+      </div>
+    </div>
+    <div class="section-card">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title"><span style="font-size:16px;display:inline-block;vertical-align:middle;line-height:1">📊</span> الأداء عبر الشهور</div>
+        <span class="collapse-icon open">▼</span>
+      </div>
+      <div class="section-body">
+        <div id="perfContent" style="padding:14px"></div>
+      </div>
+    </div>
+    <div class="section-card">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title"><span style="font-size:16px;display:inline-block;vertical-align:middle;line-height:1">⚖️</span> مقارنة بين شهرين</div>
+        <span class="collapse-icon open">▼</span>
+      </div>
+      <div class="section-body">
+        <div id="compareContent" style="padding:14px"></div>
+      </div>
+    </div>
+    <div class="section-card">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title"><span style="font-size:16px;display:inline-block;vertical-align:middle;line-height:1">📋</span> ملخص الشهر الحالي</div>
+        <span class="collapse-icon open">▼</span>
+      </div>
+      <div class="section-body">
+        <div id="overviewContent" style="padding:18px"></div>
+      </div>
+    </div>
+    <!-- فكرة ١٧: توقع الدخل المستقبلي -->
+    <div class="section-card">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title"><span style="font-size:16px;display:inline-block;vertical-align:middle;line-height:1">🔮</span> توقع الدخل المستقبلي</div>
+        <span class="collapse-icon open">▼</span>
+      </div>
+      <div class="section-body">
+        <div style="padding:14px">
+          <div style="font-size:0.78rem;color:var(--text2);margin-bottom:10px">العائد من الشهادات تلقائي — أضف دخل إضافي شهري (مرتب / عيادة):</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center">
+            <label style="font-size:0.8rem;color:var(--text2);font-weight:700">💼 مرتب شهري:</label>
+            <input class="fi-extra-input" type="number" lang="en" id="fiSalary" placeholder="0" inputmode="decimal" oninput="renderFutureIncome()">
+            <label style="font-size:0.8rem;color:var(--text2);font-weight:700">🏥 عيادة / أخرى:</label>
+            <input class="fi-extra-input" type="number" lang="en" id="fiClinic" placeholder="0" inputmode="decimal" oninput="renderFutureIncome()">
+            <span style="font-size:0.72rem;color:var(--muted)">ج.م/شهر</span>
+          </div>
+          <div id="futureIncContent"><div class="empty">افتح تاب الملخص لعرض التوقعات</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="section-card">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">📤 تصدير التقارير</div>
+        <span class="collapse-icon open">▼</span>
+      </div>
+      <div class="section-body" style="padding:14px">
+        <div style="display:flex;gap:9px;flex-wrap:wrap">
+          <button class="btn btn-success" onclick="exportCSV()" style="flex:1;min-width:130px;padding:11px;font-size:0.85rem">📊 تصدير Excel/CSV</button>
+          <button class="btn btn-warning" onclick="exportPDF()" style="flex:1;min-width:130px;padding:11px;font-size:0.85rem">📄 تصدير / طباعة PDF</button>
+        </div>
+        <div style="font-size:0.74rem;color:var(--muted);line-height:1.9;margin-top:10px">
+          <p>📊 ملف CSV بيفتح في Excel أو Google Sheets لكل أرقام الشهر الحالي</p>
+          <p>📄 PDF تقرير منسّق — اختر "حفظ كـ PDF" من نافذة الطباعة</p>
+        </div>
+      </div>
+    </div>
+    <div class="section-card">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">🔄 مزامنة البيانات</div>
+        <span class="collapse-icon open">▼</span>
+      </div>
+      <div class="section-body" style="padding:14px">
+        <div class="sync-bar">
+          <div class="sync-bar-text">💾 نسخة احتياطية كاملة (JSON) — بتشمل كل التبويبات: الميزانية • الفيزا • المحافظ • الشهادات والصناديق • العروض والنقاط • المديونيات • التذكيرات. صدّرها وارفعها على أي جهاز لاسترجاع كل حاجة زي ما كانت.</div>
+          <button class="btn btn-success" onclick="exportJSON()">⬇ تصدير</button>
+          <button class="btn btn-primary" onclick="askImport('importFile2')">⬆ استيراد</button>
+          <input type="file" id="importFile2" accept=".json,.xlsx,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none" onchange="importJSON(event)">
+        </div>
+        <div style="font-size:0.78rem;color:var(--muted);line-height:1.9">
+          <p>✅ آخر حفظ: <span id="lastSaveTime">—</span></p>
+          <p>📱 يعمل على الموبايل والكمبيوتر بدون إنترنت</p>
+          <p>💾 البيانات محفوظة تلقائياً في المتصفح</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <div id="page-visa" class="page active">
+    <!-- شريط التنقل بين الشهور -->
+    <div id="monthNavBar" class="month-nav" style="display:none">
+      <button class="month-nav-arrow" onclick="navMonth(-1)" title="الشهر السابق">‹</button>
+      <div class="month-nav-scroll" id="monthNavScroll"></div>
+      <button class="month-nav-arrow" onclick="navMonth(1)" title="الشهر التالي">›</button>
+      <button class="month-nav-new" onclick="createNewMonth()" title="بدء شهر جديد">+ شهر</button>
+    </div>
+    <div id="summaryCardsWrap" style="margin-bottom:0">
+      <div id="summaryCardsToggle" onclick="toggleSummaryCards()" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;cursor:pointer;user-select:none;transition:background 0.15s" onmouseenter="this.style.background='rgba(0,0,0,0.02)'" onmouseleave="this.style.background='var(--surface)'">
+        <span style="font-size:0.8rem;font-weight:700;color:var(--text2)" id="summaryCardsToggleLabel">▲ إخفاء الملخص</span>
+        <span id="summaryCardsToggleIcon" style="font-size:0.75rem;color:var(--muted)">اضغط للطي</span>
+      </div>
+      <div id="summaryCards" class="summary-grid"></div>
+    </div>
+    <div class="section-card">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title"><span style="font-size:16px;display:inline-block;vertical-align:middle;line-height:1">💳</span> بطاقات الفيزا <span class="section-badge" id="visaCount">0 بطاقة</span></div>
+        <div class="chips-bar" style="display:flex;gap:7px;align-items:center" onclick="event.stopPropagation()">
+          <button id="visaFilterBtn" onclick="toggleVisaFilter()" style="padding:4px 11px;border-radius:20px;border:1px solid var(--border2);background:var(--surface);color:var(--text2);font-family:'Cairo',sans-serif;font-size:0.76rem;font-weight:600;cursor:pointer;transition:all 0.2s;white-space:nowrap">🔴 عليها فلوس</button>
+          <button id="visaTypeFilterBtn" onclick="cycleVisaTypeFilter()" style="padding:4px 11px;border-radius:20px;border:1px solid var(--border2);background:var(--surface);color:var(--text2);font-family:'Cairo',sans-serif;font-size:0.76rem;font-weight:600;cursor:pointer;transition:all 0.2s;white-space:nowrap">🗂 الكل</button>
+          <button id="visaCollapseAllBtn" onclick="toggleVisaCollapseAll()" style="padding:4px 11px;border-radius:20px;border:1px solid var(--border2);background:var(--surface);color:var(--text2);font-family:'Cairo',sans-serif;font-size:0.76rem;font-weight:600;cursor:pointer;transition:all 0.2s;white-space:nowrap">📇 طي الكل</button>
+          <button id="visaSortBtn" onclick="cycleSortMode('visa')" style="padding:4px 11px;border-radius:20px;border:1px solid var(--border2);background:var(--surface);color:var(--text2);font-family:'Cairo',sans-serif;font-size:0.76rem;font-weight:600;cursor:pointer;transition:all 0.2s;white-space:nowrap">🗂 كما أضيفت</button>
+          <button class="btn-add" onclick="addVisa()" data-i18n="common_add">+ إضافة</button>
+          <button onclick="resetAllVisa()" style="padding:6px 12px;background:#fdf0ec;border:1px solid #fecaca;color:#922b18;border-radius:8px;font-family:'Cairo',sans-serif;font-size:0.78rem;font-weight:700;cursor:pointer;white-space:nowrap">🔄 تصفير الكل</button>
+        </div>
+        <span class="collapse-icon open">▼</span>
+      </div>
+      <div class="section-body">
+        <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input class="search-input" id="visaSearch" placeholder="🔍 بحث..." oninput="renderVisa()" style="flex:1;min-width:120px">
+          <span style="font-size:0.72rem;color:var(--muted)">اكتب في خانة المطلوب والمسدد مباشرة</span>
+        </div>
+        <!-- شريط تحديد البطاقات الدولية -->
+        <div id="visaSelectBar" style="display:none;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:0.73rem;font-weight:700;color:var(--text2)">💳 البطاقات المحددة:</span>
+          <div id="visaSelectedChips" style="display:flex;gap:5px;flex-wrap:wrap;flex:1"></div>
+          <div style="background:var(--surface);border:1.5px solid var(--danger);border-radius:10px;padding:5px 12px;text-align:center;min-width:100px">
+            <span style="font-size:0.6rem;color:var(--muted);font-weight:700;display:block">متبقي المحدد</span>
+            <span id="visaSelectedRemaining" style="font-size:1rem;font-weight:900;color:var(--danger)">0 ج.م</span>
+          </div>
+          <button onclick="clearVisaSelection()" style="padding:4px 10px;background:#fdf0ec;border:1px solid #fecaca;color:#922b18;border-radius:8px;font-family:'Cairo',sans-serif;font-size:0.72rem;font-weight:700;cursor:pointer">مسح</button>
+        </div>
+        <div class="cc-hidden-totals"><span id="vTotal-required">0</span><span id="vTotal-paid">0</span><span id="vTotal-remaining">0</span></div>
+        <div class="cards-grid cards-grid-compact" id="visaGrid"></div>
+      </div>
+    </div>
+    <div class="section-card">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">📝 ملاحظات الفيزا</div>
+        <span class="collapse-icon">▼</span>
+      </div>
+      <div class="section-body hidden">
+        <textarea class="notes-area" id="visaNotes" placeholder="أي ملاحظات..." oninput="autoSave()"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- CERTS PAGE -->
+  <div id="page-certs" class="page">
+<!-- FUNDS (مدمجة داخل تبويب الشهادات) -->
+<div class="page-sticky-bar" id="fundsStickyBar">
+  <span class="psb-title"><span style="font-size:18px;display:inline-block;vertical-align:middle;line-height:1">📦</span> الصناديق</span>
+  <div class="psb-divider"></div>
+  <div class="psb-chip blue"><span class="psb-label">إجمالي المبالغ</span><span class="psb-val" id="psb-funds-amount">—</span></div>
+  <div class="psb-chip green"><span class="psb-label">العائد التراكمي</span><span class="psb-val" id="psb-funds-cumulative">—</span></div>
+</div>
+    <div class="section-card">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title" title="صناديق استثمارية — عائد يومي متراكم (فائدة مركّبة) يُضاف لمصادر الدخل تلقائيًا حتى تاريخ السحب"><span data-i18n="funds_title">📦 الصناديق الاستثمارية</span> <span class="section-badge" id="fundsCount">0 صندوق</span></div>
+        <div style="display:flex;gap:7px;align-items:center" onclick="event.stopPropagation()">
+          <button class="btn-add" onclick="addFund()" data-i18n="common_add">+ إضافة</button>
+        </div>
+        <span class="collapse-icon open">▼</span>
+      </div>
+      <div class="section-body">
+        <div class="cc-hidden-totals"><span id="fTotal-amount">0</span><span id="fTotal-cumulative">0</span></div>
+        <div class="cards-grid cards-grid-compact" id="fundsGrid"></div>
+      </div>
+    </div>
+
+<div class="section-card">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title" title="شهادات بنكية — عائد شهري ثابت أو متناقص حسب نوع الشهادة، بيُحسب تلقائيًا كل شهر"><span style="font-size:16px;display:inline-block;vertical-align:middle;line-height:1">🏦</span> الشهادات <span class="section-badge" id="certsCount">0 شهادة</span></div>
+        <div class="cert-filters" style="display:flex;gap:7px;align-items:center;flex-wrap:wrap" onclick="event.stopPropagation()">
+          <div style="display:flex;align-items:center;gap:5px">
+            <span style="font-size:0.66rem;color:var(--muted);font-weight:700;white-space:nowrap">النوع:</span>
+            <div class="cert-type-tabs" style="border:none;padding:0;margin:0;gap:5px">
+              <button class="cert-type-btn active" onclick="filterCerts('all',this);event.stopPropagation()">الكل</button>
+              <button class="cert-type-btn" onclick="filterCerts('fixed',this);event.stopPropagation()">🔒 ثابتة</button>
+              <button class="cert-type-btn" onclick="filterCerts('decreasing',this);event.stopPropagation()">📉 متناقصة</button>
+              <button class="cert-type-btn" onclick="filterCerts('variable',this);event.stopPropagation()">📊 متغيرة</button>
+            </div>
+          </div>
+          <span style="width:1px;height:18px;background:var(--border2);display:inline-block"></span>
+          <div style="display:flex;align-items:center;gap:5px">
+            <span style="font-size:0.66rem;color:var(--muted);font-weight:700;white-space:nowrap">ترتيب:</span>
+            <div class="cert-type-tabs" id="certsSortTabs" style="border:none;padding:0;margin:0;gap:5px">
+              <button class="cert-type-btn" data-mode="maturity" onclick="setCertSort('maturity',this);event.stopPropagation()">⏳ الأقرب انتهاءً</button>
+              <button class="cert-type-btn" data-mode="newest" onclick="setCertSort('newest',this);event.stopPropagation()">⚡ الأحدث أولاً</button>
+              <button class="cert-type-btn" data-mode="default" onclick="setCertSort('default',this);event.stopPropagation()">↕️ افتراضي</button>
+            </div>
+          </div>
+          <span style="width:1px;height:18px;background:var(--border2);display:inline-block"></span>
+          <button id="certsCollapseAllBtn" onclick="toggleCollapseAll('certs')" class="collapse-all-btn">📖 فرد الكل</button>
+          <button class="btn-add" onclick="addCert()" data-i18n="common_add">+ إضافة</button>
+        </div>
+        <span class="collapse-icon open">▼</span>
+      </div>
+      <div class="section-body">
+        <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input class="search-input" id="certsSearch" placeholder="🔍 بحث..." oninput="renderCerts()" style="flex:1;min-width:120px">
+        </div>
+        <details class="explain-box">
+          <summary>💡 يعني إيه "العائد التراكمي"؟ (مثال بسيط)</summary>
+          <div class="explain-body">
+            <p><b>الفكرة:</b> العائد التراكمي معناه إن أرباح كل يوم <b>بتتضاف لأصل فلوسك</b>، فاليوم اللي بعده الربح بيتحسب على المبلغ <b>الأكبر</b> — يعني ربح على ربح.</p>
+            <p><b>مثال:</b> استثمرت <b>10,000 ج</b> في صندوق عائده اليومي <b>0.05%</b> (والمبلغ بيتجدد يوميًا زي ما التطبيق بيحسب):</p>
+            <table class="explain-table">
+              <tr><th>المدة</th><th>عائد بسيط<br><small>(على 10,000 ثابتة)</small></th><th>عائد تراكمي<br><small>(ربح على ربح)</small></th><th>الفرق</th></tr>
+              <tr><td>30 يوم</td><td>150.00 ج</td><td>151.09 ج</td><td class="ex-gain">+1.09</td></tr>
+              <tr><td>6 شهور</td><td>900.00 ج</td><td>941.50 ج</td><td class="ex-gain">+41.50</td></tr>
+              <tr><td>سنة</td><td>1,825.00 ج</td><td>2,001.59 ج</td><td class="ex-gain">+176.59</td></tr>
+            </table>
+            <p class="explain-note">📌 كل ما المدة طالت، الفرق بيكبر — عشان كده التراكمي بيفيد أكتر في الاستثمار طويل الأجل. الأرقام هنا للتوضيح بس، مش وعد بعائد.</p>
+          </div>
+        </details>
+        <div class="cc-hidden-totals"><span id="cTotal-amount">0</span><span id="cTotal-monthly">0</span></div>
+        <div class="cards-grid cards-grid-compact" id="certsGrid"></div>
+      </div>
+    </div>
+    <!-- فكرة ١٦: خط زمني استحقاق الشهادات -->
+    <div class="section-card">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">⏳ خط زمني استحقاق الشهادات <span class="section-badge" id="certTimelineBadge"></span></div>
+        <span class="collapse-icon open">▼</span>
+      </div>
+      <div class="section-body">
+        <div class="cert-timeline" id="certTimelineContent">
+          <div class="empty">لا توجد شهادات بتاريخ انتهاء.</div>
+        </div>
+      </div>
+    </div>
+    <!-- قائمة الصناديق المنتهية -->
+    <div id="finishedFundsCard" class="section-card" style="display:none;margin-top:12px">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title" title="صناديق تم سحبها بالكامل — للمرجعية فقط، لا تُحسب ضمن الشهر الحالي">✅ صناديق منتهية <span class="section-badge" id="finishedFundsCount" style="background:var(--surface);color:var(--text2);border:1px solid var(--border)">0</span></div>
+        <span class="collapse-icon open">▼</span>
+      </div>
+      <div class="section-body">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>الصندوق</th>
+                <th>المبلغ</th>
+                <th>تاريخ الإيداع</th>
+                <th>تاريخ السحب</th>
+                <th>العائد المحقق</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="finishedFundsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WALLETS PAGE -->
+  <div id="page-wallets" class="page">
+    <div class="section-card">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title"><span data-i18n="wallets_title">👛 المحافظ والحسابات</span> <span class="section-badge" id="walletsCount">0</span></div>
+        <div style="display:flex;gap:7px;align-items:center" onclick="event.stopPropagation()">
+          <button class="btn-add" onclick="addWallet()" data-i18n="common_add">+ إضافة</button>
+          <button onclick="resetAllWallets()" style="padding:6px 12px;background:#fdf0ec;border:1px solid #fecaca;color:#922b18;border-radius:8px;font-family:'Cairo',sans-serif;font-size:0.78rem;font-weight:700;cursor:pointer;white-space:nowrap">🔄 تصفير الكل</button>
+        </div>
+        <span class="collapse-icon open">▼</span>
+      </div>
+      <div class="section-body">
+        <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input class="search-input" id="walletsSearch" placeholder="🔍 بحث..." oninput="renderWallets()" style="flex:1;min-width:120px">
+        </div>
+        <!-- شريط إجمالي المتبقي للمحافظ -->
+        <div id="walletsRemainingBar" style="display:none;padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--bg)">
+          <span style="font-size:0.75rem;font-weight:700;color:var(--text2)" data-i18n="wallets_selected_label">المحافظ المحددة:</span>
+          <div id="walletsSelectedChips" style="display:flex;gap:5px;flex-wrap:wrap;flex:1"></div>
+          <div style="background:var(--surface);border:1.5px solid var(--accent);border-radius:10px;padding:6px 14px;display:flex;flex-direction:column;align-items:center;min-width:120px">
+            <span style="font-size:0.62rem;color:var(--muted);font-weight:700" data-i18n="wallets_total_remaining">إجمالي المتبقي</span>
+            <span id="walletsSelectedRemaining" style="font-size:1.1rem;font-weight:900;color:var(--accent)">0 ج.م</span>
+          </div>
+          <button onclick="clearWalletSelection()" style="padding:4px 10px;background:#fdf0ec;border:1px solid #fecaca;color:#922b18;border-radius:8px;font-family:'Cairo',sans-serif;font-size:0.72rem;font-weight:700;cursor:pointer" data-i18n="wallets_clear">مسح</button>
+        </div>
+        <div class="cards-grid" id="walletsGrid">
+          <div class="empty" data-i18n="wallets_empty">لا توجد محافظ.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- DEBTS PAGE -->
+  <div id="page-debts" class="page">
+<div class="page-sticky-bar" id="debtsStickyBar">
+  <span class="psb-title"><span style="font-size:18px;display:inline-block;vertical-align:middle;line-height:1">📄</span> المديونيات</span>
+  <div class="psb-divider"></div>
+  <div class="psb-chip red"><span class="psb-label">إجمالي القسط الشهري</span><span class="psb-val" id="psb-debts-monthly">—</span></div>
+  <div class="psb-chip amber"><span class="psb-label">إجمالي المتبقي</span><span class="psb-val" id="psb-debts-remaining">—</span></div>
+  <div class="psb-chip blue"><span class="psb-label">عدد الأقساط</span><span class="psb-val" id="psb-debts-count">—</span></div>
+</div>
+<div class="section-card">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">📋 المديونيات والأقساط <span class="section-badge" id="debtsCount">0</span></div>
+        <div class="chips-bar" style="display:flex;gap:7px;align-items:center" onclick="event.stopPropagation()">
+          <button id="debtUnpaidBtn" onclick="toggleDebtUnpaidFilter()" style="padding:4px 11px;border-radius:20px;border:1px solid var(--border2);background:var(--surface);color:var(--text2);font-family:'Cairo',sans-serif;font-size:0.76rem;font-weight:600;cursor:pointer;transition:all 0.2s;white-space:nowrap">🔴 لم يسدد</button>
+          <button id="debtsSortBtn" onclick="cycleSortMode('debts')" style="padding:4px 11px;border-radius:20px;border:1px solid var(--border2);background:var(--surface);color:var(--text2);font-family:'Cairo',sans-serif;font-size:0.76rem;font-weight:600;cursor:pointer;transition:all 0.2s;white-space:nowrap">🗂 كما أضيفت</button>
+          <button id="debtsCollapseAllBtn" onclick="toggleCollapseAll('debts')" class="collapse-all-btn">📖 فرد الكل</button>
+          <button class="btn-add" onclick="addDebt()" data-i18n="common_add">+ إضافة</button>
+        </div>
+        <span class="collapse-icon open">▼</span>
+      </div>
+      <div class="section-body">
+        <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input class="search-input" id="debtsSearch" placeholder="🔍 بحث..." oninput="renderDebts()" style="flex:1;min-width:120px">
+        </div>
+        <!-- شريط تحديد المديونيات غير المسددة -->
+        <div id="debtSelectBar" style="display:none;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:0.73rem;font-weight:700;color:var(--text2)">📋 المديونيات المحددة:</span>
+          <div id="debtSelectedChips" style="display:flex;gap:5px;flex-wrap:wrap;flex:1"></div>
+          <div style="background:var(--surface);border:1.5px solid var(--danger);border-radius:10px;padding:5px 12px;text-align:center;min-width:100px">
+            <span style="font-size:0.6rem;color:var(--muted);font-weight:700;display:block">إجمالي المتبقي</span>
+            <span id="debtSelectedRemaining" style="font-size:1rem;font-weight:900;color:var(--danger)">0 ج.م</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px;background:var(--surface);border:1.5px solid var(--border2);border-radius:10px;padding:5px 10px">
+            <span style="font-size:0.66rem;color:var(--muted);font-weight:700;white-space:nowrap">عدد الأقساط:</span>
+            <input type="number" lang="en" id="debtSelectInstCount" min="1" value="1" oninput="updateDebtSelectBar()" style="width:44px;border:none;background:transparent;font-family:'Cairo',sans-serif;font-weight:800;font-size:0.82rem;text-align:center;color:var(--text)">
+          </div>
+          <div style="background:var(--surface);border:1.5px solid var(--accent);border-radius:10px;padding:5px 12px;text-align:center;min-width:110px">
+            <span style="font-size:0.6rem;color:var(--muted);font-weight:700;display:block">قسط المحدد</span>
+            <span id="debtSelectedInstAmount" style="font-size:1rem;font-weight:900;color:var(--accent)">0 ج.م</span>
+          </div>
+          <button onclick="clearDebtSelection()" style="padding:4px 10px;background:#fdf0ec;border:1px solid #fecaca;color:#922b18;border-radius:8px;font-family:'Cairo',sans-serif;font-size:0.72rem;font-weight:700;cursor:pointer">مسح</button>
+        </div>
+        <div class="cc-hidden-totals"><span id="dTotal-monthly">0</span></div>
+        <div class="cards-grid cards-grid-compact" id="debtsGrid"></div>
+      </div>
+    </div>
+    <!-- قائمة المديونيات المنتهية -->
+    <div id="finishedDebtsCard" class="section-card" style="display:none;margin-top:12px">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">✅ المديونيات المنتهية <span class="section-badge" id="finishedDebtsCount" style="background:var(--surface);color:var(--text2);border:1px solid var(--border)">0</span></div>
+        <span class="collapse-icon open">▼</span>
+      </div>
+      <div class="section-body">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>البيان</th>
+                <th>القسط الشهري</th>
+                <th>إجمالي المديونية</th>
+                <th>عدد الدفعات</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="finishedDebtsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- OFFERS PAGE -->
+  <div id="page-offers" class="page">
+<div class="page-sticky-bar" id="offersStickyBar">
+  <span class="psb-title"><span style="font-size:18px;display:inline-block;vertical-align:middle;line-height:1">🎁</span> العروض والنقاط</span>
+  <div class="psb-divider"></div>
+  <div class="psb-chip blue"><span class="psb-label">إجمالي الإنفاق</span><span class="psb-val" id="psb-offers-spend">—</span></div>
+  <div class="psb-chip amber"><span class="psb-label">كاش باك متوقع</span><span class="psb-val" id="psb-offers-expected">—</span></div>
+  <div class="psb-chip green"><span class="psb-label">محصّل فعلاً</span><span class="psb-val" id="psb-offers-received">—</span></div>
+</div>
+<!-- ملخص الكاش باك الكلي -->
+    <div id="cashbackSummary" style="display:none;margin-bottom:12px"></div>
+    <div class="section-card">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">🎁 العروض البنكية <span class="section-badge" id="offersCount">0</span></div>
+        <div style="display:flex;gap:7px;align-items:center" onclick="event.stopPropagation()">
+          <button id="offersCollapseAllBtn" onclick="toggleCollapseAll('offers')" class="collapse-all-btn">📖 فرد الكل</button>
+          <button class="btn-add" onclick="addOffer()" data-i18n="common_add">+ إضافة</button>
+        </div>
+        <span class="collapse-icon open">▼</span>
+      </div>
+      <div class="section-body">
+        <div class="cc-hidden-totals"><span id="oTotal-spend">0</span><span id="oTotal-expected">0</span><span id="oTotal-received">0</span></div>
+        <div class="cards-grid cards-grid-compact" id="offersGrid"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- BUDGET PAGE (ميزانيتي) -->
+  <div id="page-budget" class="page">
+    <div class="bgt-app">
+      <!-- Backdrop for mobile sidebar -->
+      <div id="bgtSidebarBackdrop" onclick="bgtCloseSidebar()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9998;backdrop-filter:blur(1px)"></div>
+      <div class="bgt-sidebar" id="bgtSidebar">
+        <div class="bgt-sidebar-logo">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <h1><span style="font-size:18px;display:inline-block;vertical-align:middle;line-height:1">💰</span> ميزانيتي</h1>
+            <button id="bgtSidebarCloseBtn" onclick="bgtCloseSidebar()" style="display:none;background:none;border:1px solid var(--border2);border-radius:8px;padding:4px 9px;font-size:1rem;cursor:pointer;color:var(--text2);line-height:1" title="إغلاق" aria-label="إغلاق القائمة">✕</button>
+          </div>
+          <p>مصروفات ودخل</p>
+          <div id="bgtSyncStatus" style="font-size:0.68rem;margin-top:4px;padding:3px 7px;border-radius:6px;display:inline-block;font-weight:700;background:#fdf5e6;color:#8b6020;border:1px solid #e8c87a">⏳ جاري التحميل...</div>
+        </div>
+        <div class="bgt-years-scroll" id="bgtYearsList"></div>
+        <button class="bgt-add-year-btn" onclick="bgtOpenModal('year')">+ سنة جديدة</button>
+      </div>
+      <div class="bgt-main">
+        <div class="bgt-topbar" style="flex-direction:column;align-items:stretch;gap:8px">
+          <button class="bgt-mob-menu-btn" id="bgtMobMenuBtn" onclick="bgtToggleSidebar()" aria-label="فتح قائمة السنوات والشهور" title="القائمة" style="display:none!important">☰</button>
+          <div class="bgt-topbar-title" id="bgtPageTitle" style="display:none">—</div>
+          <div id="bgtMonthStrip" class="bgt-mstrip"></div>
+
+        </div>
+        <div class="bgt-content">
+          <!-- Sub-tabs: الملخص / المعاملات / التقارير -->
+          <div class="bgt-subtabs" id="bgtSubtabs">
+            <button class="bgt-subtab" id="bgtSubtabTransactions" data-tab="transactions" onclick="bgtSwitchPage('transactions')">📋 المعاملات</button>
+            <button class="bgt-subtab active" id="bgtSubtabSummary" data-tab="summary" onclick="bgtSwitchPage('summary')">📊 الملخص</button>
+            <button class="bgt-subtab" id="bgtSubtabAnalytics" data-tab="analytics" onclick="bgtSwitchPage('analytics')">📈 التقارير</button>
+          </div>
+
+          <!-- تاب 1: الملخص -->
+          <div id="bgtPaneSummary">
+            <!-- toggle bar for kpis -->
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:9px;margin-bottom:8px;cursor:pointer;user-select:none" onclick="bgtToggleKpis()">
+              <span id="bgtKpisToggleLbl" style="font-size:0.76rem;font-weight:700;color:var(--text2)">▲ إخفاء ملخص الشهر</span>
+              <span style="font-size:0.7rem;color:var(--muted)">اضغط للطي</span>
+            </div>
+            <div class="bgt-kpis" id="bgtKpis"></div>
+            <div id="bgtTopDayCard"></div>
+            <div class="bgt-card">
+              <div class="bgt-card-title">ملخص الشهر</div>
+              <div id="bgtSummary"></div>
+            </div>
+          </div>
+
+          <!-- تاب 2: المعاملات (كل الإدخال هنا) -->
+          <div id="bgtPaneTransactions" style="display:none">
+            <div id="bgtLockBanner" style="display:none" class="bgt-lock-banner">
+              <span>🔒 الشهر ده مغلق للحماية من التعديل عن طريق الخطأ</span>
+              <button onclick="bgtUnlockMonth()">🔓 فتح للتعديل</button>
+            </div>
+            <div id="bgtLockBtn" style="margin-bottom:8px;display:flex;justify-content:flex-end;gap:8px">
+              <button onclick="bgtManualLockMonth()" style="background:#fdf0ec;border:1px solid #fecaca;color:#922b18;font-family:'Cairo',sans-serif;font-size:0.75rem;font-weight:700;padding:5px 13px;border-radius:8px;cursor:pointer">🔒 قفل الشهر</button>
+            </div>
+            <div class="bgt-card">
+              <div class="bgt-stabs">
+                <button class="bgt-stab active" id="bgtStab1" onclick="bgtSwitchSection('exp')">📤 مصروفات</button>
+                <button class="bgt-stab" id="bgtStab2" onclick="bgtSwitchSection('inc')">📥 دخل</button>
+              </div>
+              <div id="bgtSecExp">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:6px">
+                  <span style="font-size:0.8rem;font-weight:800;color:var(--text2)">المعاملات</span>
+                  <div style="display:flex;align-items:center;gap:4px">
+                    <button id="bgtCatEditToggle" class="bgt-cat-edit-toggle-btn" onclick="bgtToggleCatEdit('exp')" title="تعديل التصنيفات" style="display:inline-flex;align-items:center;justify-content:center;background:none;border:1px solid var(--border2);color:var(--text2);width:26px;height:26px;border-radius:50%;cursor:pointer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></button>
+                  </div>
+                </div>
+                <div class="bgt-chips bgt-chips-scroll" id="bgtCatChips"></div>
+                <div class="bgt-add-row" id="bgtAddRowExp">
+                  <div style="position:relative;flex:2;min-width:140px">
+                    <input id="bgtIName" placeholder="اكتب المصروف — مثال: ماما 2000" type="text" style="width:100%">
+                    <div id="bgtACDropdown" style="display:none;position:absolute;top:calc(100% + 4px);right:0;left:0;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,0.14);z-index:2000;overflow:hidden"></div>
+                  </div>
+                  <input id="bgtIAmt" placeholder="المبلغ (اختياري)" type="number" lang="en" inputmode="decimal">
+                  <button class="bgt-add-btn" onclick="bgtAddItem()" data-i18n="common_add">+ إضافة</button>
+                </div>
+                <div class="bgt-smart-hint" id="bgtSmartHintExp" style="display:none"></div>
+                <div class="bgt-items" id="bgtItemsList"></div>
+                <div style="margin-top:14px;border-top:2px solid var(--border);padding-top:10px">
+                  <div style="font-size:0.78rem;font-weight:800;color:var(--text2);margin-bottom:6px;display:flex;align-items:center;gap:5px">📋 كل المصروفات (كل التصنيفات مجمّعة)</div>
+                  <div class="bgt-items" id="bgtAllItemsList"></div>
+                </div>
+              </div>
+              <div id="bgtSecInc" style="display:none">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:6px">
+                  <span style="font-size:0.8rem;font-weight:800;color:var(--text2)">المعاملات</span>
+                  <button id="bgtIncCatEditToggle" class="bgt-cat-edit-toggle-btn" onclick="bgtToggleCatEdit('inc')" title="تعديل التصنيفات" style="display:inline-flex;align-items:center;justify-content:center;background:none;border:1px solid var(--border2);color:var(--text2);width:26px;height:26px;border-radius:50%;cursor:pointer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></button>
+                </div>
+                <div class="bgt-chips bgt-chips-scroll" id="bgtIncChips"></div>
+                <div class="bgt-add-row" id="bgtAddRowInc">
+                  <div style="position:relative;flex:2;min-width:140px">
+                    <input id="bgtIncName" placeholder="اكتب الدخل — مثال: مرتب 20000" type="text" style="width:100%">
+                    <div id="bgtIncACDropdown" style="display:none;position:absolute;top:calc(100% + 4px);right:0;left:0;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,0.14);z-index:2000;overflow:hidden"></div>
+                  </div>
+                  <input id="bgtIncAmt" placeholder="المبلغ (اختياري)" type="number" lang="en" inputmode="decimal">
+                  <button class="bgt-add-btn-green" onclick="bgtAddInc()" data-i18n="common_add">+ إضافة</button>
+                </div>
+                <div class="bgt-smart-hint" id="bgtSmartHintInc" style="display:none"></div>
+                <div class="bgt-items" id="bgtIncList"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- تاب 3: التقارير -->
+          <div id="bgtPageAnalytics" style="display:none">
+            <div class="bgt-yfilt" id="bgtYearFilt"></div>
+            <div class="bgt-kpis" id="bgtAKpis"></div>
+            <div class="bgt-grid2">
+              <div class="bgt-card"><div class="bgt-card-title">🏆 أفضل وأسوأ شهر</div><div id="bgtBestWorst"></div></div>
+              <div class="bgt-card"><div class="bgt-card-title"><span style="font-size:14px;display:inline-block;vertical-align:middle;line-height:1">📋</span> صافي كل شهر</div><div id="bgtNetChart"></div></div>
+              <div class="bgt-card bgt-full"><div class="bgt-card-title"><span style="font-size:14px;display:inline-block;vertical-align:middle;line-height:1">📊</span> الدخل مقابل المصروفات</div><div id="bgtIncExpChart"></div></div>
+              <div class="bgt-card"><div class="bgt-card-title">🗂 توزيع المصروفات</div><div id="bgtCatChart"></div></div>
+              <div class="bgt-card"><div class="bgt-card-title"><span style="font-size:14px;display:inline-block;vertical-align:middle;line-height:1">💰</span> نسبة التوفير شهرياً</div><div id="bgtSaveChart"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- BUDGET MODALS -->
+    <div class="bgt-overlay" id="bgtMYear"><div class="bgt-modal"><h3>إضافة سنة جديدة</h3><label>السنة</label><input id="bgtMYearInput" type="number" lang="en" placeholder="2027"><div class="bgt-modal-btns"><button class="bgt-btn-cancel" onclick="bgtCloseModals()">إلغاء</button><button class="bgt-btn-ok" onclick="bgtConfirmYear()">إضافة</button></div></div></div>
+    <div class="bgt-overlay" id="bgtMMonth"><div class="bgt-modal"><h3 id="bgtMMonthTitle">إضافة شهر</h3><label>اسم الشهر</label><input id="bgtMMonthInput" type="text" placeholder="مثال: أغسطس"><div class="bgt-modal-btns"><button class="bgt-btn-cancel" onclick="bgtCloseModals()">إلغاء</button><button class="bgt-btn-ok" onclick="bgtConfirmMonth()">إضافة</button></div></div></div>
+
+    <div class="bgt-overlay" id="bgtMRenameM"><div class="bgt-modal"><h3>تعديل اسم الشهر</h3><label>الاسم</label><input id="bgtMRenameMInput" type="text"><div class="bgt-modal-btns"><button class="bgt-btn-cancel" onclick="bgtCloseModals()">إلغاء</button><button class="bgt-btn-ok" onclick="bgtConfirmRenameM()">حفظ</button></div></div></div>
+    <div class="bgt-overlay" id="bgtMRenameY"><div class="bgt-modal"><h3>تعديل اسم السنة</h3><label>الاسم</label><input id="bgtMRenameYInput" type="text"><div class="bgt-modal-btns"><button class="bgt-btn-cancel" onclick="bgtCloseModals()">إلغاء</button><button class="bgt-btn-ok" onclick="bgtConfirmRenameY()">حفظ</button></div></div></div>
+  </div>
+
+  <!-- REMINDERS PAGE (مضافة في آخر الصفحات عمدًا — عشان ميتغيّرش ترتيب/index أي section-header قديم بيتخزن حالة الطي بتاعته حسب الترتيب) -->
+  <div id="page-reminders" class="page">
+    <div class="section-card">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">🔔 تذكيراتي الخاصة <span class="rem-version-tag">(v2026-09-08-9)</span></div>
+        <span class="collapse-icon open">▼</span>
+      </div>
+      <div class="section-body">
+        <div style="padding:18px 16px;background:var(--bg);border-bottom:1px solid var(--border)">
+          <div style="font-size:0.85rem;font-weight:800;color:var(--text2);margin-bottom:12px">➕ إضافة تذكير جديد</div>
+          <div style="display:flex;flex-direction:column;gap:12px;max-width:480px">
+            <input id="pgReminderText" class="cell-input" placeholder="مثال: اسحب من كارت الأهلي" style="width:100%;font-size:0.95rem;padding:12px">
+            <div class="rem-seg">
+              <label class="active">
+                <input type="radio" name="pgReminderType" value="daily" checked onchange="togglePgReminderTypeUI()"> يومي لمدة أيام
+              </label>
+              <label>
+                <input type="radio" name="pgReminderType" value="once" onchange="togglePgReminderTypeUI()"> في تاريخ محدد
+              </label>
+              <label>
+                <input type="radio" name="pgReminderType" value="recurring" onchange="togglePgReminderTypeUI()"> دوري (كل X يوم)
+              </label>
+              <label>
+                <input type="radio" name="pgReminderType" value="weekly" onchange="togglePgReminderTypeUI()"> أسبوعي (يوم محدد)
+              </label>
+            </div>
+            <div id="pgReminderWeeklyFields" class="rem-cond-field" style="display:none">
+              <span>كل يوم:</span>
+              <select id="pgReminderWeekday">
+                <option value="0">الأحد</option>
+                <option value="1">الاثنين</option>
+                <option value="2">الثلاثاء</option>
+                <option value="3">الأربعاء</option>
+                <option value="4" selected>الخميس</option>
+                <option value="5">الجمعة</option>
+                <option value="6">السبت</option>
+              </select>
+            </div>
+            <div id="pgReminderDailyFields" class="rem-cond-field">
+              <span>لمدة (أيام):</span>
+              <input id="pgReminderDays" type="number" lang="en" min="1" placeholder="15">
+            </div>
+            <div id="pgReminderOnceFields" class="rem-cond-field" style="display:none">
+              <span>التاريخ:</span>
+              <input id="pgReminderDate" type="date">
+            </div>
+            <div id="pgReminderRecurringFields" class="rem-cond-field" style="display:none">
+              <span>التكرار كل (يوم):</span>
+              <input id="pgReminderInterval" type="number" lang="en" min="1" placeholder="80">
+            </div>
+            <div id="pgReminderRecurringHint" style="display:none;font-size:0.72rem;color:var(--muted);font-weight:600;background:rgba(37,99,235,0.07);border-radius:8px;padding:8px 10px;line-height:1.6">
+              💡 التذكير الدوري ميخلصش أبدًا — كل ما تدوس "✅ اتصلت"، العداد يبدأ من جديد تلقائيًا.
+            </div>
+            <button onclick="addCustomReminderFromPage()" class="rem-add-btn">+ إضافة التذكير</button>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px 0">
+          <span style="font-size:0.78rem;color:var(--muted);font-weight:700">ترتيب حسب:</span>
+          <select id="pgReminderSort" onchange="_refreshRemindersUI()" style="font-size:0.78rem;font-weight:700;padding:7px 10px;border-radius:9px;border:1.5px solid var(--border2);background:var(--surface);color:var(--text2)">
+            <option value="due" selected>⏱️ الأقرب أولاً</option>
+            <option value="active">🔵 النشط أولاً</option>
+            <option value="newest">🆕 الأحدث</option>
+          </select>
+        </div>
+        <div id="pgRemindersList" style="padding:14px 16px"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- DEBT PAYMENT MODAL -->
+<div class="modal-overlay" id="debtModal">
+  <div class="modal-box">
+    <div class="modal-title">💳 سداد قسط المديونية</div>
+    <div class="modal-debt-name" id="debtModalName"></div>
+    <div class="modal-row">
+      <span class="modal-label">إجمالي المديونية الأصلية:</span>
+      <span class="modal-value" id="debtModalTotal"></span>
+    </div>
+    <div class="modal-row">
+      <span class="modal-label">المتبقي حالياً:</span>
+      <span class="modal-value red" id="debtModalRemaining"></span>
+    </div>
+    <div id="debtModalInstallments" style="display:none;font-size:0.8rem;font-weight:700;color:var(--accent3);margin-bottom:8px;padding:7px 12px;background:rgba(217,119,6,0.08);border-radius:8px"></div>
+
+    <!-- حالة القسط الشهري الحالي -->
+    <div id="debtCurrentMonthStatus" style="margin-bottom:12px;padding:10px 12px;border-radius:9px;font-size:0.82rem;font-weight:700;border:1.5px solid"></div>
+
+    <!-- خيار عدد الأقساط -->
+    <div style="margin-bottom:10px">
+      <div style="font-size:0.78rem;color:var(--text2);font-weight:700;margin-bottom:6px">عدد الأقساط للسداد:</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="pay-btn active" id="installPayBtn1" onclick="setInstallCount(1)" style="font-size:0.8rem">قسط واحد</button>
+        <button class="pay-btn" id="installPayBtn2" onclick="setInstallCount(2)" style="font-size:0.8rem">قسطين</button>
+        <button class="pay-btn" id="installPayBtnCustom" onclick="setInstallCount(0)" style="font-size:0.8rem">مبلغ محدد</button>
+      </div>
+    </div>
+
+    <div style="font-size:0.8rem;color:var(--muted);margin-bottom:8px;font-weight:600">مبلغ السداد:</div>
+    <div class="modal-input-row">
+      <input class="cell-input" type="number" lang="en" id="debtPayInput" placeholder="0" oninput="calcDebtPay()">
+      <div style="padding:9px 12px;background:rgba(37,99,235,0.08);border-radius:9px;font-size:0.82rem;font-weight:700;color:var(--accent);white-space:nowrap">المتبقي: <span id="debtAfterPay">—</span></div>
+    </div>
+    <div style="font-size:0.75rem;color:var(--muted);margin-bottom:4px;font-weight:600">سجل المدفوعات:</div>
+    <div class="modal-history" id="debtPayHistory"></div>
+    <div class="modal-btns">
+      <button class="btn btn-green" onclick="confirmDebtPay()">✅ تأكيد السداد</button>
+      <button class="btn btn-danger" onclick="resetDebt()">🔄 إعادة تعيين</button>
+      <button class="btn btn-primary" onclick="closeDebtModal()">إغلاق</button>
+    </div>
+  </div>
+</div>
+
+<!-- TUTORIAL MODAL -->
+<div class="modal-overlay" id="tutorialModal" onclick="if(event.target===this)closeTutorialModal()">
+  <div class="modal-box" style="max-width:520px;max-height:82vh;overflow-y:auto;text-align:right">
+    <div class="modal-title" data-i18n="tut_title">❓ دليل استخدام التطبيق</div>
+    <div id="tutorialBody" style="font-size:0.86rem;line-height:1.9;color:var(--text)">
+
+      <div class="tut-sec">
+        <div class="tut-h" data-i18n="tut_budget_h">💻 ميزانيتي</div>
+        <div class="tut-img-ph" id="tutImg-budget"><img src="tutorial-images/budget.png" alt="budget" loading="lazy"></div>
+        <div class="tut-p" data-i18n="tut_budget_p">تقسيم شهري بين دخل ومصروفات حسب تصنيفات (بيت، عربية، شخصية...). اضغط "دخل" أو "مصروفات" لإضافة عملية، واختار التصنيف. تقدر تعمل "تصنيف جديد" أو تدخل "تعديل التصنيفات" عشان تحذف/تسمي/ترتب التصنيفات بالسحب أو بالأسهم.</div>
+      </div>
+
+      <div class="tut-sec">
+        <div class="tut-h" data-i18n="tut_visa_h">💳 الفيزا</div>
+        <div class="tut-img-ph" id="tutImg-visa"><img src="tutorial-images/visa.png" alt="visa" loading="lazy"></div>
+        <div class="tut-p" data-i18n="tut_visa_p">متابعة كروت الفيزا: المبلغ المطلوب سداده والمسدد فعليًا والمتبقي. زرار "🔴 عليها فلوس" بيفلتر الكروت اللي لسه مديون بيها بس. زرار "⇅" بيرتب الكروت (افتراضي / الأحدث / الأقرب استحقاقًا).</div>
+      </div>
+
+      <div class="tut-sec">
+        <div class="tut-h" data-i18n="tut_certs_h">🏦 شهادات وصناديق</div>
+        <div class="tut-img-ph" id="tutImg-certs"><img src="tutorial-images/certs.png" alt="certs" loading="lazy"></div>
+        <div class="tut-p" data-i18n="tut_certs_p">الشهادات البنكية (ثابتة / متناقصة / متغيرة) بيتحسب عائدها الشهري تلقائيًا. الصناديق الاستثمارية بيتحسب عائدها بمعدل يومي مركّب، وممكن تسحب منها وتسجل السحب في الشهر المناسب.</div>
+      </div>
+
+      <div class="tut-sec">
+        <div class="tut-h" data-i18n="tut_wallets_h">👛 المحافظ</div>
+        <div class="tut-img-ph" id="tutImg-wallets"><img src="tutorial-images/wallets.png" alt="wallets" loading="lazy"></div>
+        <div class="tut-p" data-i18n="tut_wallets_p">أماكن تجميع الفلوس (كاش، حساب بنكي...) بعيدًا عن الفيزا والشهادات، عشان تعرف فلوسك موزّعة فين بالظبط.</div>
+      </div>
+
+      <div class="tut-sec">
+        <div class="tut-h" data-i18n="tut_debts_h">📋 المديونيات</div>
+        <div class="tut-img-ph" id="tutImg-debts"><img src="tutorial-images/debts.png" alt="debts" loading="lazy"></div>
+        <div class="tut-p" data-i18n="tut_debts_p">قروض وأقساط بره الفيزا. كل مديونية ليها قسط شهري ويوم استحقاق. اضغط "سداد جزئي" لتسجيل دفعة، وزرار "🔴 لم يسدد" بيفلتر اللي لسه ما دفعش قسط الشهر الحالي.</div>
+      </div>
+
+      <div class="tut-sec">
+        <div class="tut-h" data-i18n="tut_offers_h">♡ العروض</div>
+        <div class="tut-img-ph" id="tutImg-offers"><img src="tutorial-images/offers.png" alt="offers" loading="lazy"></div>
+        <div class="tut-p" data-i18n="tut_offers_p">حفظ عروض أو أفكار شراء عايز ترجعلها بعدين، من غير ما تدخلها في الميزانية لحد ما تقرر.</div>
+      </div>
+
+      <div class="tut-sec">
+        <div class="tut-h" data-i18n="tut_reports_h">📈 التقارير</div>
+        <div class="tut-img-ph" id="tutImg-reports"><img src="tutorial-images/reports.png" alt="reports" loading="lazy"></div>
+        <div class="tut-p" data-i18n="tut_reports_p">ملخصات وجداول لكل حاجة (فيزا، شهادات، مديونيات) على شكل جدول قابل للتصدير، عشان تشوف الصورة الكاملة بسرعة.</div>
+      </div>
+
+      <div class="tut-sec">
+        <div class="tut-h" data-i18n="tut_export_h">⬇ التصدير</div>
+        <div class="tut-p" data-i18n="tut_export_p">زرار السهم لتحت في الهيدر بيصدّرلك ملف Excel/PDF لبياناتك.</div>
+      </div>
+
+      <div class="tut-sec">
+        <div class="tut-h" data-i18n="tut_tips_h">نصائح عامة</div>
+        <div class="tut-p" data-i18n="tut_tips_p">🎨 زرار الفرشاة بيغيّر شكل الألوان. 🔔 زرار الجرس بيوريك المواعيد المستحقة القريبة. اضغط ضغطة مطوّلة على أي تاب فوق أو تصنيف عشان تسحبه وتغيّر ترتيبه.</div>
+      </div>
+
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-primary" data-i18n="tut_close" onclick="closeTutorialModal()">فهمت، إغلاق</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- EXPORT REMINDER MODAL (شهر اتقفل) -->
+<div class="modal-overlay" id="exportReminderModal">
+
+  <div class="modal-box" style="max-width:340px;text-align:center">
+    <div style="font-size:2rem;margin-bottom:6px">🔒📦</div>
+    <div class="modal-title" style="margin-bottom:6px" id="expReminderTitle">اتقفل الشهر</div>
+    <div style="font-size:0.85rem;color:var(--muted);margin-bottom:16px">تحب تصدّر بيانات الشهر ده Excel أو PDF عشان تحتفظ بنسخة قبل ما تروح؟</div>
+    <div class="modal-btns">
+      <button class="btn btn-green" onclick="_expReminderAction('excel')">📊 Excel</button>
+      <button class="btn btn-danger" onclick="_expReminderAction('pdf')">📄 PDF</button>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-primary" onclick="closeExportReminder()">لاحقًا</button>
+    </div>
+  </div>
+</div>
+
+<!-- VISA IMAGE MODAL -->
+<div class="img-modal-overlay" id="imgModal">
+  <div class="img-modal-box">
+    <div class="img-modal-title" id="imgModalTitle">📷 صور البطاقة</div>
+    <div class="img-grid">
+      <div>
+        <div style="font-size:0.75rem;color:var(--muted);margin-bottom:5px;font-weight:700">وجه البطاقة</div>
+        <div class="img-slot" id="imgSlotFront" onclick="triggerImgUpload('front')">
+          <div class="img-slot-icon"><span style="font-size:40px;display:inline-block;vertical-align:middle;line-height:1">🖼️</span></div>
+          <div class="img-slot-label">اضغط لرفع صورة الوجه</div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:0.75rem;color:var(--muted);margin-bottom:5px;font-weight:700">ظهر البطاقة</div>
+        <div class="img-slot" id="imgSlotBack" onclick="triggerImgUpload('back')">
+          <div class="img-slot-icon"><span style="font-size:40px;display:inline-block;vertical-align:middle;line-height:1">🖼️</span></div>
+          <div class="img-slot-label">اضغط لرفع صورة الظهر</div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-danger" onclick="clearVisaImgs()" style="font-size:0.8rem">🗑 حذف الصور</button>
+      <button class="btn btn-primary" onclick="closeImgModal()" style="flex:1;font-size:0.8rem">إغلاق</button>
+    </div>
+    <input type="file" id="imgUploadInput" accept="image/*" style="display:none" onchange="handleImgUpload(event)">
+  </div>
+</div>
+
+<!-- IMAGE ZOOM MODAL -->
+<div class="img-zoom-overlay" id="imgZoomOverlay" onclick="closeImgZoom()">
+  <div class="img-zoom-inner" onclick="event.stopPropagation()">
+    <button class="img-zoom-close" onclick="closeImgZoom()">✕</button>
+    <img id="imgZoomImg" src="" alt="صورة البطاقة">
+    <div class="ocr-result-bar" id="ocrResultBar" style="display:none">
+      <span>🔍 الأرقام المستخرجة:</span>
+      <span id="ocrNumbers" style="font-weight:800;letter-spacing:2px;font-family:monospace"></span>
+      <button class="ocr-copy-btn" onclick="copyOcrNumbers()">📋 نسخ</button>
+      <button class="ocr-copy-btn" style="background:var(--accent2)" onclick="saveOcrToCard()">💾 حفظ اسم البطاقة</button>
+    </div>
+    <div id="ocrLoading" style="display:none;text-align:center;padding:8px;font-size:0.82rem;color:var(--accent)">⏳ جاري استخراج الأرقام من الصورة...</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script defer src="js/app-main.js?v=2c80f900"></script>
+
+<script defer src="js/theme-ui.js?v=051f32d4"></script>
+
+<!-- ══ EXPORT MODAL ══ -->
+<div id="exportModal" style="position:fixed;inset:0;z-index:8000;background:rgba(0,0,0,0.55);align-items:flex-end;justify-content:center" onclick="if(event.target===this)closeExportModal()">
+  <div style="background:var(--card);border-radius:18px 18px 0 0;padding:22px 18px 32px;width:100%;max-width:480px;box-shadow:0 -4px 32px rgba(0,0,0,0.18);font-family:'Cairo',sans-serif">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+      <div style="font-size:1.05rem;font-weight:800;color:var(--text)" data-i18n="export_modal_title">⬇ تصدير البيانات</div>
+      <button onclick="closeExportModal()" style="background:none;border:none;font-size:1.3rem;color:var(--muted);cursor:pointer;padding:0 4px">✕</button>
+    </div>
+    <div style="font-size:0.78rem;color:var(--text2);margin-bottom:8px;font-weight:700" data-i18n="export_file_type">نوع الملف</div>
+    <div style="display:flex;gap:10px;margin-bottom:18px">
+      <label style="flex:1;cursor:pointer">
+        <input type="radio" name="expType" value="excel" checked onchange="expTypeChanged()" style="display:none">
+        <div class="exp-type-btn" id="expTypeExcel" style="border:2px solid var(--accent2);background:rgba(91,110,74,0.1);border-radius:10px;padding:12px;text-align:center;transition:all 0.18s">
+          <div style="font-size:1.4rem">📊</div>
+          <div style="font-size:0.82rem;font-weight:800;color:var(--accent2)">Excel</div>
+          <div style="font-size:0.68rem;color:var(--muted)">.xlsx</div>
+        </div>
+      </label>
+      <label style="flex:1;cursor:pointer">
+        <input type="radio" name="expType" value="pdf" onchange="expTypeChanged()" style="display:none">
+        <div class="exp-type-btn" id="expTypePDF" style="border:2px solid var(--border);background:transparent;border-radius:10px;padding:12px;text-align:center;transition:all 0.18s">
+          <div style="font-size:1.4rem">📄</div>
+          <div style="font-size:0.82rem;font-weight:800;color:var(--text)">PDF</div>
+          <div style="font-size:0.68rem;color:var(--muted)">.pdf</div>
+        </div>
+      </label>
+    </div>
+    <div style="font-size:0.78rem;color:var(--text2);margin-bottom:8px;font-weight:700" data-i18n="export_data_range">نطاق البيانات</div>
+    <div style="display:flex;gap:10px;margin-bottom:14px">
+      <label style="flex:1;cursor:pointer">
+        <input type="radio" name="expRange" value="all" checked style="display:none">
+        <div class="exp-range-btn exp-range-active" id="expRangeAll" onclick="expRangeSelect('all')"
+          style="border:2px solid var(--accent2);background:rgba(91,110,74,0.1);border-radius:10px;padding:10px 8px;text-align:center;transition:all 0.18s;cursor:pointer">
+          <div style="font-size:0.88rem;font-weight:800;color:var(--accent2)" data-i18n="export_all_months">📅 كل الشهور</div>
+          <div style="font-size:0.68rem;color:var(--muted)" id="expAllCount" data-i18n="export_loading">جاري التحميل…</div>
+        </div>
+      </label>
+      <label style="flex:1;cursor:pointer">
+        <input type="radio" name="expRange" value="one" style="display:none">
+        <div class="exp-range-btn" id="expRangeOne" onclick="expRangeSelect('one')"
+          style="border:2px solid var(--border);background:transparent;border-radius:10px;padding:10px 8px;text-align:center;transition:all 0.18s;cursor:pointer">
+          <div style="font-size:0.88rem;font-weight:800;color:var(--text)" data-i18n="export_one_month">📆 شهر واحد</div>
+          <div style="font-size:0.68rem;color:var(--muted)" data-i18n="export_select_from_list">اختر من القائمة</div>
+        </div>
+      </label>
+    </div>
+    <div id="expMonthPicker" style="display:none;margin-bottom:14px">
+      <div style="font-size:0.78rem;color:var(--text2);margin-bottom:6px;font-weight:700" data-i18n="export_choose_month">اختر الشهر</div>
+      <select id="expMonthSelect" class="cell-input" style="width:100%;font-family:'Cairo',sans-serif"></select>
+    </div>
+    <button onclick="doExport()" id="expDoBtn"
+      style="width:100%;padding:13px;background:var(--accent2);color:#fff;border:none;border-radius:12px;font-family:'Cairo',sans-serif;font-size:1rem;font-weight:800;cursor:pointer;margin-top:4px;transition:opacity 0.2s"
+      data-i18n="export_do_btn">
+      ⬇ تصدير الآن
+    </button>
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+      <div style="font-size:0.78rem;color:var(--text2);margin-bottom:8px;font-weight:700">💾 نسخة احتياطية كاملة (JSON) — كل التبويبات</div>
+      <div style="display:flex;gap:10px">
+        <button onclick="closeExportModal();exportJSON()" style="flex:1;padding:11px;background:transparent;color:var(--accent2);border:2px solid var(--accent2);border-radius:12px;font-family:'Cairo',sans-serif;font-size:0.88rem;font-weight:800;cursor:pointer">⬇ تصدير نسخة</button>
+        <button onclick="closeExportModal();askImport('importFile')" style="flex:1;padding:11px;background:transparent;color:var(--text);border:2px solid var(--border);border-radius:12px;font-family:'Cairo',sans-serif;font-size:0.88rem;font-weight:800;cursor:pointer">⬆ استيراد نسخة</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script defer src="js/i18n-full.js?v=4b7aa0c1"></script>
+
+<!-- ══ شريط تنقل سفلي + زر إضافة عائم — للموبايل الرأسي فقط (الشريط العلوي بيفضل شغال زي ما هو للتابلت/الأفقي/الكمبيوتر) ══ -->
+<script defer src="js/tabs-enhance.js?v=a5094891"></script>
+<script>
+// تذكير النسخة الاحتياطية: لو عدّى أكتر من 14 يوم من آخر تصدير، ننبّه مرة واحدة في اليوم
+window.addEventListener('load', function () {
+  setTimeout(function () {
+    try {
+      var now = Date.now(), DAY = 86400000;
+      var last = parseInt(localStorage.getItem('lastBackupTs') || '0', 10);
+      if (!last) { localStorage.setItem('lastBackupTs', String(now)); return; } // أول مرة: نبدأ العدّ من دلوقتي
+      var lastNag = parseInt(localStorage.getItem('lastBackupNag') || '0', 10);
+      if (now - last > 14 * DAY && now - lastNag > DAY && typeof toast === 'function') {
+        localStorage.setItem('lastBackupNag', String(now));
+        toast('💾 عدّى أكتر من أسبوعين على آخر نسخة احتياطية — صدّر نسخة من قايمة التصدير');
+      }
+    } catch (e) {}
+  }, 5000);
+});
+</script>
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("./sw.js").catch(function (e) { console.warn("SW registration failed", e); });
+  });
+}
+</script>
+<script defer src="js/ux-layer.js?v=167040a3" id="ux-layer"></script>
+<script defer src="js/quick-add.js?v=c5884d54" id="quick-add"></script>
+<script defer src="js/certs-debts-extras.js?v=07371e21"></script>
+
+
+<script defer src="js/i18n-extra.js?v=ff7a2fcd"></script>
+
+<script defer src="js/sync-status.js?v=cd98008a"></script>
+
+<script defer src="js/early-boot.js?v=a555ec8f"></script>
+</body>
+</html>
+
