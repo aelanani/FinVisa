@@ -5,7 +5,7 @@
 
 // اسم الكاش جديد (Vault) عشان الهوية الجديدة (الاسم + اللوجو + الأيقونات + الثيم الرمادي) تتحمّل فريش،
 // وبيتمسح الكاش القديم تلقائيًا في حدث activate
-const CACHE_NAME = 'vault-d9dc81';
+const CACHE_NAME = 'vault-ba2766';
 const OFFLINE_URL = 'index.html';
 
 // الملفات التي يتم تخزينها فور التثبيت (App Shell)
@@ -20,16 +20,16 @@ const PRECACHE_ASSETS = [
   './logo.svg',
   './favicon.svg',
   // BEGIN-JS-PRECACHE
-  './js/app-main.js?v=2c80f900',
-  './js/certs-debts-extras.js?v=07371e21',
-  './js/early-boot.js?v=a555ec8f',
-  './js/i18n-extra.js?v=ff7a2fcd',
-  './js/i18n-full.js?v=4b7aa0c1',
-  './js/quick-add.js?v=c5884d54',
-  './js/sync-status.js?v=cd98008a',
-  './js/tabs-enhance.js?v=a5094891',
-  './js/theme-ui.js?v=051f32d4',
-  './js/ux-layer.js?v=167040a3'
+  './app-main.js?v=2c80f900',
+  './theme-ui.js?v=051f32d4',
+  './i18n-full.js?v=4b7aa0c1',
+  './tabs-enhance.js?v=a5094891',
+  './ux-layer.js?v=167040a3',
+  './quick-add.js?v=c5884d54',
+  './certs-debts-extras.js?v=07371e21',
+  './i18n-extra.js?v=ff7a2fcd',
+  './sync-status.js?v=cd98008a',
+  './early-boot.js?v=a555ec8f'
   // END-JS-PRECACHE
 ];
 
@@ -123,7 +123,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   // ━━ ملفات js/ (نسخها بالـ ?v=hash يعني ثابتة) → Cache First ━━
-  if (url.origin === self.location.origin && url.pathname.includes('/js/') && url.pathname.endsWith('.js')) {
+  if (url.origin === self.location.origin && url.pathname.endsWith('.js') && !url.pathname.endsWith('/sw.js') && url.search.includes('v=')) {
     event.respondWith(
       caches.open(CACHE_NAME).then((cache) =>
         cache.match(request).then((cached) => cached || fetch(request).then((response) => {
