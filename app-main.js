@@ -7531,26 +7531,41 @@ function bgtGetSuggestions(query) {
     // ساعة التسجيل (لو البند ليه وقت) — بنستخدمها في الترتيب الذكي حسب الوقت
     const _tm = /^(\d{1,2}):(\d{2})/.exec(it.time || '');
     const _hr = _tm ? (parseInt(_tm[1],10) + parseInt(_tm[2],10)/60) : null;
+    // يوم الأسبوع (من تاريخ البند) — null لو مفيش تاريخ
+    const _dm = /^(\d{4})-(\d{2})-(\d{2})/.exec(it.date || '');
+    const _dow = _dm ? new Date(+_dm[1], +_dm[2]-1, +_dm[3]).getDay() : null;
+    const _occ = _hr !== null ? { h: _hr, dow: _dow } : null;
     const found = groups.find(g => _bgtFuzzySame(g.canonical, name));
     if(found) {
       found.total += (it.amt||0); found.count++;
       if(name.length > found.canonical.length) found.canonical = name;
       // تتبع الفئة الأكثر تكراراً
       found.catCounts[it.cat] = (found.catCounts[it.cat]||0) + 1;
-      if(_hr !== null) found.hrs.push(_hr);
+      if(_occ) found.hrs.push(_occ);
     } else {
       const catCounts = {}; catCounts[it.cat] = 1;
-      groups.push({ canonical:name, total:it.amt||0, count:1, catCounts, avgAmt: it.amt||0, hrs: _hr !== null ? [_hr] : [] });
+      groups.push({ canonical:name, total:it.amt||0, count:1, catCounts, avgAmt: it.amt||0, hrs: _occ ? [_occ] : [] });
     }
   });
-  // ── الترتيب الذكي حسب الوقت: البنود اللي عادةً بتتسجل قرب الساعة الحالية بتطلع الأول ──
-  const _nowD = new Date(), _nowH = _nowD.getHours() + _nowD.getMinutes()/60;
-  const _SIG = 1.0, _BASE = _SIG * Math.sqrt(2*Math.PI) / 24; // متوسط الوزن لو التوزيع عشوائي على اليوم
+  // ── الترتيب الذكي حسب الوقت + يوم الأسبوع: البنود اللي عادةً بتتسجل في نفس الساعة ونفس اليوم بتطلع الأول ──
+  const _nowD = new Date(), _nowH = _nowD.getHours() + _nowD.getMinutes()/60, _nowDow = _nowD.getDay();
+  const _isWE = d => d === 5 || d === 6;                       // الجمعة والسبت = إجازة
+  const _dayK = d => d === _nowDow ? 1 : (_isWE(d) === _isWE(_nowDow) ? 0.45 : 0.2);   // نفس اليوم > نفس نوع اليوم > باقي الأيام
+  const _SIG = 1.0, _HBASE = _SIG * Math.sqrt(2*Math.PI) / 24;  // متوسط وزن الساعة لو التوزيع عشوائي على اليوم
+  let _avgDayK = 0; for (let d = 0; d < 7; d++) _avgDayK += _dayK(d); _avgDayK /= 7;
+  const _WD = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
   groups.forEach(g => {
-    let w = 0;
-    g.hrs.forEach(h => { let d = Math.abs(h - _nowH); d = Math.min(d, 24 - d); w += Math.exp(-(d*d) / (2*_SIG*_SIG)); });
-    g.timeLift = w - g.hrs.length * _BASE;      // الزيادة عن المتوقع عشوائيًا
-    g.timeHit = g.hrs.length >= 2 && g.timeLift >= 0.9; // تكرر كفاية في الوقت ده
+    let w = 0, sameDayNear = 0;
+    g.hrs.forEach(o => {
+      let dh = Math.abs(o.h - _nowH); dh = Math.min(dh, 24 - dh);
+      const hk = Math.exp(-(dh*dh) / (2*_SIG*_SIG));
+      w += hk * (o.dow === null ? _avgDayK : _dayK(o.dow));     // بدون تاريخ: وزن محايد
+      if (o.dow === _nowDow && dh <= 1.5) sameDayNear++;
+    });
+    g.timeLift = w - g.hrs.length * _HBASE * _avgDayK;          // الزيادة عن المتوقع عشوائيًا
+    g.timeHit = g.hrs.length >= 2 && g.timeLift >= 0.9;          // تكرر كفاية في الوقت/اليوم ده
+    g.dayHit = g.timeHit && sameDayNear >= 2;                    // وتكرر في نفس اليوم بالذات
+    g.dayName = _WD[_nowDow];
   });
   const _byTime = (a,b) => (b.timeHit - a.timeHit) || (a.timeHit && b.timeHit ? (b.timeLift - a.timeLift) : 0) || (b.count - a.count);
   // حساب المتوسط والفئة الأغلب لكل مجموعة
@@ -7586,7 +7601,7 @@ function bgtShowAC(input) {
     const cat = BGT_CATS.find(c=>c.k===s.bestCat) || BGT_CATS.find(c=>c.k===BG.curCat) || BGT_CATS[0] || {n:'',bg:'var(--bg)',tc:'var(--text2)',c:'var(--border)'};
     const isSameCat = s.bestCat === BG.curCat;
     const catBadge = !isSameCat ? `<span class="bgt-ac-badge" style="background:${cat.bg};color:${cat.tc};border-color:${cat.c}">${cat.n}</span>` : '';
-    const countLabel = (s.timeHit ? `<span class="bgt-ac-badge" style="background:#fff7e0;color:#8b6020;border-color:#e8c87a">🕐 عادةً دلوقتي</span>` : '') + (s.count > 1 ? `<span class="bgt-ac-badge">×${s.count} مرة</span>` : '');
+    const countLabel = (s.timeHit ? `<span class="bgt-ac-badge" style="background:#fff7e0;color:#8b6020;border-color:#e8c87a">${s.dayHit ? '📅 عادةً يوم ' + s.dayName + ' دلوقتي' : '🕐 عادةً دلوقتي'}</span>` : '') + (s.count > 1 ? `<span class="bgt-ac-badge">×${s.count} مرة</span>` : '');
     return `<div class="bgt-ac-item ${i===0?'bgt-ac-active':''}" data-name="${s.canonical.replace(/"/g,'&quot;')}"
       data-cat="${s.bestCat}" data-avg="${s.avgAmt}"
       onmousedown="event.preventDefault();bgtSelectAC(this.getAttribute('data-name'),this.getAttribute('data-cat'),this.getAttribute('data-avg'))">
@@ -7647,7 +7662,7 @@ function bgtShowIncAC(input) {
   _bgtIncACIdx = 0;
   const cat = BGT_INC_CATS.find(c=>c.k===BG.curInc);
   dd.innerHTML = suggestions.map((s,i) => {
-    const countLabel = (s.timeHit ? `<span class="bgt-ac-badge" style="background:#fff7e0;color:#8b6020;border-color:#e8c87a">🕐 عادةً دلوقتي</span>` : '') + (s.count > 1 ? `<span class="bgt-ac-badge">×${s.count} مرة</span>` : '');
+    const countLabel = (s.timeHit ? `<span class="bgt-ac-badge" style="background:#fff7e0;color:#8b6020;border-color:#e8c87a">${s.dayHit ? '📅 عادةً يوم ' + s.dayName + ' دلوقتي' : '🕐 عادةً دلوقتي'}</span>` : '') + (s.count > 1 ? `<span class="bgt-ac-badge">×${s.count} مرة</span>` : '');
     return `<div class="bgt-ac-item ${i===0?'bgt-ac-active':''}" data-name="${s.canonical.replace(/"/g,'&quot;')}"
       data-cat="${s.bestCat||''}"
       onmousedown="event.preventDefault();bgtSelectIncAC(this.getAttribute('data-name'),this.getAttribute('data-cat'))">
