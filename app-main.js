@@ -8080,14 +8080,15 @@ function renderDueDropdownContent() {
     });
     // بيبني تفاصيل البنود اللي اتجمعت مع بعض (زي "فاليو (3)") — كل بند لوحده + زرار صغير لإجراء فردي
     const _dueGroupDetailRows = (it) => {
-      const row = (icon, name, val, valColor, btn) => `<div class="due-sub-row"><span class="dsr-name">${icon} ${esc(name)}</span><span class="dsr-val" style="color:${valColor}">${val}</span>${btn || ''}</div>`;
+      // kind/idx → لو اتضغط على الصف نفسه يروح للكارت (الأزرار جواه بتستخدم stopPropagation فمفيش تعارض)
+      const row = (icon, name, val, valColor, btn, kind, idx) => `<div class="due-sub-row"${kind ? ` onclick="dueJumpTo('${kind}', ${idx})" style="cursor:pointer"` : ''}><span class="dsr-name">${icon} ${esc(name)}</span><span class="dsr-val" style="color:${valColor}">${val}</span>${btn || ''}</div>`;
       if (it.type === '🏦 عائد شهادة' && it.certIdxs && it.certIdxs.length > 1) {
         return it.certIdxs.map(ci => {
           const c = d.certs[ci]; if (!c) return '';
           const monthly = c.type === 'decreasing' ? calcDecreasingMonthly(c) : parseNum(c.amount)*parseNum(c.rate)/100/12;
           const received = !!(c.receivedMonths && c.receivedMonths[curKeyForCertsDrop]);
           return row('🏦', ((c.bank||'')+' '+(c.num||'')).trim() || 'شهادة', received ? '✓ استلمت' : '+' + fmt(monthly), received ? 'var(--muted)' : 'var(--accent2)',
-            received ? '' : `<button class="ur-mini recv" onclick="event.stopPropagation();toggleCertReceived([${ci}])">✓</button>`);
+            received ? '' : `<button class="ur-mini recv" onclick="event.stopPropagation();toggleCertReceived([${ci}])">✓</button>`, 'cert', ci);
         }).join('');
       }
       if (it.type === '📋 قسط' && it.debtIdxs && it.debtIdxs.length > 1) {
@@ -8095,7 +8096,7 @@ function renderDueDropdownContent() {
           const dd2 = d.debts[di]; if (!dd2) return '';
           const _nd = getDebtNextDue(dd2, today);
           return row('📋', dd2.name || 'قسط', _nd ? fmt(_nd.amount) : '✓ مسدد', _nd ? 'var(--text)' : 'var(--muted)',
-            _nd ? `<button class="ur-mini pay" onclick="event.stopPropagation();closeDueDropdown();openDebtModal(${di})">سداد</button>` : '');
+            _nd ? `<button class="ur-mini pay" onclick="event.stopPropagation();closeDueDropdown();openDebtModal(${di})">سداد</button>` : '', 'debt', di);
         }).join('');
       }
       if (it.type === '💳 فيزا' && it.visaIdxs && it.visaIdxs.length > 1) {
@@ -8103,7 +8104,7 @@ function renderDueDropdownContent() {
           const v = d.visa[vi]; if (!v) return '';
           const rem = _r2(parseNum(v.required) - parseNum(v.paidAmount));
           return row('💳', v.name || 'بطاقة', fmt(rem), 'var(--text)',
-            rem > 0 ? `<button class="ur-mini pay" onclick="event.stopPropagation();payVisaFull([${vi}])">سداد</button>` : '');
+            rem > 0 ? `<button class="ur-mini pay" onclick="event.stopPropagation();payVisaFull([${vi}])">سداد</button>` : '', 'visa', vi);
         }).join('');
       }
       return '';
@@ -8171,10 +8172,12 @@ function renderDueDropdownContent() {
         (it.visaIdxs && it.visaIdxs.length > 1)
       );
       const detailId = `dueDetail_${gIdx}`;
+      const _jk = it.custom ? 'custom' : (it.visaIdxs && it.visaIdxs.length ? 'visa' : it.debtIdxs && it.debtIdxs.length ? 'debt' : it.certIdxs && it.certIdxs.length ? 'cert' : '');
+      const _ji = it.custom ? `'${it.customId}'` : (_jk === 'visa' ? it.visaIdxs[0] : _jk === 'debt' ? it.debtIdxs[0] : _jk === 'cert' ? it.certIdxs[0] : '');
       const nameHtml = `${esc(it.displayName)}${hasDetail ? ` <span id="chev_${detailId}" style="font-size:0.68rem;color:var(--muted)">▾</span>` : ''}`;
       const detailHtml = hasDetail ? `<div class="due-group-detail" id="${detailId}" style="display:none;padding:0 4px 4px 4px">${_dueGroupDetailRows(it)}</div>` : '';
       return `<div class="due-group-wrap">
-      <div class="due-row" ${hasDetail ? `onclick="toggleDueGroupDetail('${detailId}')" style="cursor:pointer"` : ''}>
+      <div class="due-row" ${hasDetail ? `onclick="toggleDueGroupDetail('${detailId}')" style="cursor:pointer"` : (_jk ? `onclick="dueJumpTo('${_jk}', ${_ji})" style="cursor:pointer"` : '')}>
         <div class="due-day-badge" style="background:${urgBg};color:${urgColor}"><span class="dd-num">${it.day}</span><span class="dd-lbl">${it.yearlyWeekday || it.weekdayLbl || dueWeekdayAr(it.day)}</span></div>
         <div class="due-info"><div class="di-name" title="${esc(it.displayName)}" style="white-space:normal;overflow:visible;text-overflow:clip;word-break:break-word;line-height:1.25">${nameHtml}</div><div class="di-type">${it.type}${it.dueLbl ? ' · ' + it.dueLbl : ''}</div></div>
         <div class="due-amount" style="color:${amtColor}">${it.custom ? '' : (it.isIncome?'+':'')+fmt(it.amount)}</div>

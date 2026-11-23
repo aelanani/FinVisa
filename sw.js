@@ -5,7 +5,7 @@
 
 // اسم الكاش جديد (Vault) عشان الهوية الجديدة (الاسم + اللوجو + الأيقونات + الثيم الرمادي) تتحمّل فريش،
 // وبيتمسح الكاش القديم تلقائيًا في حدث activate
-const CACHE_NAME = 'vault-0c34de';
+const CACHE_NAME = 'vault-7d5800';
 const OFFLINE_URL = 'index.html';
 
 // الملفات التي يتم تخزينها فور التثبيت (App Shell)
@@ -20,7 +20,7 @@ const PRECACHE_ASSETS = [
   './logo.svg',
   './favicon.svg',
   // BEGIN-JS-PRECACHE
-  './app-main.js?v=37ba9f75',
+  './app-main.js?v=7bfc2641',
   './theme-ui.js?v=051f32d4',
   './i18n-full.js?v=4b7aa0c1',
   './tabs-enhance.js?v=a5094891',
