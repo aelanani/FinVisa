@@ -478,6 +478,11 @@ function remEvery(n) {
   if (n >= 3 && n <= 10) return 'كل ' + n + ' أيام';
   return 'كل ' + n + ' يومًا';
 }
+// اسم اليوم المختصر لتاريخ معيّن (للبادج في قائمة المواعيد)
+function _remShortWd(d) {
+  const ar = ['أحد','إثنين','ثلاثاء','أربعاء','خميس','جمعة','سبت'];
+  return (typeof APP_LANG !== 'undefined' && APP_LANG === 'en') ? remWeekday(d.getDay()).slice(0,3) : ar[d.getDay()];
+}
 function remWeekday(i) { const w = (REM_I18N[APP_LANG] || REM_I18N.ar).weekdays; return w[i] || ''; }
 function remMonths() { return (REM_I18N[APP_LANG] || REM_I18N.ar).months; }
 function remT(key, vars) {
@@ -8042,19 +8047,21 @@ function renderDueDropdownContent() {
       } else if (r.type === 'recurring') {
         const st = _recurringReminderStatus(r);
         const progressText = st.overdue ? ' · ' + remT('due_missed') : ' · ' + remEvery(st.interval);
-        items.push({ name: r.text, groupKey: 'reminder-'+r.id, type: remT('due_type') + progressText, day: todayDay, amount: null, done: false, isIncome: false, custom: true, customId: r.id, daysUntilOverride: st.daysLeft, overdueOverride: st.overdue });
+        const _dd = new Date(st.nextDueKey + 'T00:00:00');   // تاريخ الاستحقاق الفعلي (مش تاريخ النهاردة)
+        items.push({ name: r.text, groupKey: 'reminder-'+r.id, type: remT('due_type') + progressText, day: _dd.getDate(), weekdayLbl: _remShortWd(_dd), amount: null, done: false, isIncome: false, custom: true, customId: r.id, daysUntilOverride: st.daysLeft, overdueOverride: st.overdue });
       } else if (r.type === 'weekly') {
         const st = _weeklyReminderStatus(r);
         const progressText = ' · ' + remT('due_every_weekday', { weekday: remWeekday(st.weekday) });
-        items.push({ name: r.text, groupKey: 'reminder-'+r.id, type: remT('due_type') + progressText, day: todayDay, amount: null, done: st.doneToday, isIncome: false, custom: true, customId: r.id, daysUntilOverride: st.daysLeft, overdueOverride: false });
+        const _wd = new Date(todayMidnight); _wd.setDate(_wd.getDate() + st.daysLeft);   // موعد الأسبوع الجاي الفعلي
+        items.push({ name: r.text, groupKey: 'reminder-'+r.id, type: remT('due_type') + progressText, day: _wd.getDate(), weekdayLbl: _remShortWd(_wd), amount: null, done: st.doneToday, isIncome: false, custom: true, customId: r.id, daysUntilOverride: st.daysLeft, overdueOverride: false });
       } else {
         const dateVal = r.date;
-        let day = todayDay, diffDays = 999;
+        let day = todayDay, diffDays = 999, wdLbl;
         if (dateVal) {
           const dObj = new Date(dateVal + 'T00:00:00');
-          if (!isNaN(dObj)) { day = dObj.getDate(); diffDays = Math.round((dObj - todayMidnight) / 86400000); }
+          if (!isNaN(dObj)) { day = dObj.getDate(); wdLbl = _remShortWd(dObj); diffDays = Math.round((dObj - todayMidnight) / 86400000); }
         }
-        items.push({ name: r.text, groupKey: 'reminder-'+r.id, type: remT('due_type'), day, amount: null, done: !!r.done, isIncome: false, custom: true, customId: r.id, daysUntilOverride: diffDays, overdueOverride: !r.done && diffDays < 0 });
+        items.push({ name: r.text, groupKey: 'reminder-'+r.id, type: remT('due_type'), day, weekdayLbl: wdLbl, amount: null, done: !!r.done, isIncome: false, custom: true, customId: r.id, daysUntilOverride: diffDays, overdueOverride: !r.done && diffDays < 0 });
       }
     } catch(e) {}
   });
