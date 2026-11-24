@@ -1589,6 +1589,12 @@ document.addEventListener('DOMContentLoaded', () => applyLanguage(APP_LANG));
               <label>
                 <input type="radio" name="pgReminderType" value="weekly" onchange="togglePgReminderTypeUI()"> أسبوعي (يوم محدد)
               </label>
+              <label>
+                <input type="radio" name="pgReminderType" value="after" onchange="togglePgReminderTypeUI()"> بعد X يوم (مرة واحدة)
+              </label>
+              <label>
+                <input type="radio" name="pgReminderType" value="monthly" onchange="togglePgReminderTypeUI()"> شهري (كل X شهر)
+              </label>
             </div>
             <div id="pgReminderWeeklyFields" class="rem-cond-field" style="display:none">
               <span>كل يوم:</span>
@@ -1613,6 +1619,18 @@ document.addEventListener('DOMContentLoaded', () => applyLanguage(APP_LANG));
             <div id="pgReminderRecurringFields" class="rem-cond-field" style="display:none">
               <span>التكرار كل (يوم):</span>
               <input id="pgReminderInterval" type="number" lang="en" min="1" placeholder="80">
+            </div>
+            <div id="pgReminderAfterFields" class="rem-cond-field" style="display:none;flex-wrap:wrap">
+              <span>بعد (يوم):</span>
+              <input id="pgReminderAfterDays" type="number" lang="en" min="1" placeholder="35" oninput="updatePgReminderAfterHint()">
+              <span id="pgReminderAfterHint" style="font-size:0.72rem;color:var(--muted);font-weight:700"></span>
+            </div>
+            <div id="pgReminderMonthlyFields" class="rem-cond-field" style="display:none;flex-wrap:wrap">
+              <span>كل (شهر):</span>
+              <input id="pgReminderMonthEvery" type="number" lang="en" min="1" placeholder="2" value="1" style="width:70px">
+              <span>في يوم:</span>
+              <input id="pgReminderMonthDay" type="number" lang="en" min="1" max="31" placeholder="1" value="1" style="width:70px">
+              <span style="font-size:0.72rem;color:var(--muted);font-weight:700">من الشهر (1 = أول الشهر)</span>
             </div>
             <div id="pgReminderRecurringHint" style="display:none;font-size:0.72rem;color:var(--muted);font-weight:600;background:rgba(37,99,235,0.07);border-radius:8px;padding:8px 10px;line-height:1.6">
               💡 التذكير الدوري ميخلصش أبدًا — كل ما تدوس "✅ اتصلت"، العداد يبدأ من جديد تلقائيًا.
@@ -1806,7 +1824,7 @@ document.addEventListener('DOMContentLoaded', () => applyLanguage(APP_LANG));
 
 <div class="toast" id="toast"></div>
 
-<script defer src="app-main.js?v=5fcc352d"></script>
+<script defer src="app-main.js?v=d686f57d"></script>
 
 <script defer src="theme-ui.js?v=051f32d4"></script>
 

@@ -274,6 +274,38 @@ function _weeklyReminderStatus(r) {
   let daysLeft = (targetDow - todayDow + 7) % 7;
   return { weekday: targetDow, weekdayName: dayNames[targetDow] || '', daysLeft: doneToday ? 7 : daysLeft, doneToday, dueToday: daysLeft === 0 && !doneToday };
 }
+// تاريخ شهر + N بنفس اليوم المطلوب (لو الشهر أقصر، بياخد آخر يوم فيه — مثلاً 31 في فبراير = 28/29)
+function _monthDayKey(year, monthIdx, day) {
+  const last = new Date(year, monthIdx + 1, 0).getDate();
+  const d = new Date(year, monthIdx, Math.min(day, last));
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function _addMonthsKey(key, months, day) {
+  const d = new Date(key + 'T00:00:00');
+  return _monthDayKey(d.getFullYear(), d.getMonth() + months, day);
+}
+// أول موعد شهري: الشهر ده لو اليوم لسه ماجاش (أو النهاردة نفسه)، وإلا الشهر الجاي
+function _firstMonthlyKey(day) {
+  const t = new Date();
+  const thisMonth = _monthDayKey(t.getFullYear(), t.getMonth(), day);
+  return thisMonth >= _todayKey() ? thisMonth : _monthDayKey(t.getFullYear(), t.getMonth() + 1, day);
+}
+// حالة تذكير "شهري" (كل X شهر في يوم معيّن): الموعد الجاي محفوظ في nextKey
+function _monthlyReminderStatus(r) {
+  const every = Math.max(1, r.everyMonths || 1);
+  const day = Math.max(1, Math.min(31, r.monthDay || 1));
+  const nextDueKey = r.nextKey || _firstMonthlyKey(day);
+  const todayD = new Date(_todayKey() + 'T00:00:00');
+  const dueD = new Date(nextDueKey + 'T00:00:00');
+  const daysLeft = Math.round((dueD - todayD) / 86400000);
+  return { every, day, nextDueKey, daysLeft, overdue: daysLeft < 0, dueToday: daysLeft === 0 };
+}
+function updatePgReminderAfterHint() {
+  const el = document.getElementById('pgReminderAfterHint'), inp = document.getElementById('pgReminderAfterDays');
+  if (!el || !inp) return;
+  const n = parseInt(inp.value);
+  el.textContent = n > 0 ? '→ ' + _addDaysToKey(_todayKey(), n) : '';
+}
 function addCustomReminderFromPage() {
   try {
     const textEl = document.getElementById('pgReminderText');
@@ -290,6 +322,18 @@ function addCustomReminderFromPage() {
     } else if (type === 'recurring') {
       const interval = Math.max(1, parseInt(intervalEl.value) || 80);
       customReminders.push({ id: 'r'+Date.now(), text, type: 'recurring', intervalDays: interval, createdKey: _todayKey(), lastDoneKey: null, active: true });
+    } else if (type === 'after') {
+      const afterEl = document.getElementById('pgReminderAfterDays');
+      const n = parseInt(afterEl.value);
+      if (!(n > 0)) { afterEl.focus(); return; }
+      // "بعد X يوم" = تذكير مرة واحدة في تاريخ محسوب من النهاردة
+      customReminders.push({ id: 'r'+Date.now(), text, type: 'once', date: _addDaysToKey(_todayKey(), n), done: false });
+      afterEl.value = ''; updatePgReminderAfterHint();
+    } else if (type === 'monthly') {
+      const everyEl = document.getElementById('pgReminderMonthEvery'), dayEl = document.getElementById('pgReminderMonthDay');
+      const every = Math.max(1, parseInt(everyEl.value) || 1);
+      const day = Math.max(1, Math.min(31, parseInt(dayEl.value) || 1));
+      customReminders.push({ id: 'r'+Date.now(), text, type: 'monthly', everyMonths: every, monthDay: day, nextKey: _firstMonthlyKey(day), createdKey: _todayKey(), active: true });
     } else if (type === 'weekly') {
       const weekdayEl = document.getElementById('pgReminderWeekday');
       const weekday = weekdayEl ? Math.max(0, Math.min(6, parseInt(weekdayEl.value))) : 4;
@@ -325,6 +369,12 @@ function markReminderDoneToday(id) {
       r.lastDoneKey = _todayKey();
     } else if (r.type === 'weekly') {
       r.lastDoneKey = _todayKey();
+    } else if (r.type === 'monthly') {
+      // الموعد الجاي = بعد X شهر من الموعد الحالي (ولو لسه قديم، بنكمّل لحد ما يبقى في المستقبل)
+      const st = _monthlyReminderStatus(r);
+      let nk = _addMonthsKey(st.nextDueKey, st.every, st.day);
+      while (nk <= _todayKey()) nk = _addMonthsKey(nk, st.every, st.day);
+      r.nextKey = nk; r.lastDoneKey = _todayKey();
     } else {
       // تذكير "في تاريخ محدد" — لما يتعمل خلاص مفيش له لازمة يفضل في القايمة، فبيتشال أوتوماتيك
       r.done = true;
@@ -349,6 +399,8 @@ function togglePgReminderTypeUI() {
   document.getElementById('pgReminderRecurringFields').style.display = type === 'recurring' ? 'flex' : 'none';
   document.getElementById('pgReminderRecurringHint').style.display = type === 'recurring' ? 'block' : 'none';
   document.getElementById('pgReminderWeeklyFields').style.display = type === 'weekly' ? 'flex' : 'none';
+  document.getElementById('pgReminderAfterFields').style.display = type === 'after' ? 'flex' : 'none';
+  document.getElementById('pgReminderMonthlyFields').style.display = type === 'monthly' ? 'flex' : 'none';
   // بنلوّن زرار الـ segmented control النشط يدويًا (بدل الاعتماد على :has() اللي مش مدعوم
   // في كل نسخ الـ WebView على الموبايل)
   document.querySelectorAll('.rem-seg label').forEach(l => {
@@ -380,6 +432,9 @@ const REM_I18N = {
     rec_overdue: '❌ متأخر! كان لازم يوم {date} — دوس "اتصلت" دلوقتي',
     rec_today: '📞 النهاردة موعد المكالمة! ({every})',
     rec_left: '🔁 باقي {left} على المكالمة الجاية ({every})',
+    mon_overdue: '❌ متأخر! كان لازم يوم {date} — دوس "تم" دلوقتي',
+    mon_today: '📌 النهاردة الموعد! ({every})',
+    mon_left: '🗓️ باقي {left} — يوم {date} ({every})',
     weekly_done: '✅ اتعمل النهاردة — هيفضل يتكرر كل يوم {weekday}',
     weekly_today: '📌 النهاردة يوم {weekday}! معاد التذكير',
     weekly_left: '🗓️ كل يوم {weekday} — باقي {left}',
@@ -424,6 +479,9 @@ const REM_I18N = {
     rec_overdue: '❌ Overdue! It was due on {date} — tap "Called" now',
     rec_today: '📞 Call is due today! ({every})',
     rec_left: '🔁 {left} until the next call ({every})',
+    mon_overdue: '❌ Overdue! Was due {date} — tap "Done" now',
+    mon_today: '📌 Due today! ({every})',
+    mon_left: '🗓️ {left} left — on {date} ({every})',
     weekly_done: '✅ Done today — repeats every {weekday}',
     weekly_today: '📌 Today is {weekday}! Reminder due',
     weekly_left: '🗓️ Every {weekday} — {left} left',
@@ -483,6 +541,14 @@ function _remShortWd(d) {
   const ar = ['أحد','إثنين','ثلاثاء','أربعاء','خميس','جمعة','سبت'];
   return (typeof APP_LANG !== 'undefined' && APP_LANG === 'en') ? remWeekday(d.getDay()).slice(0,3) : ar[d.getDay()];
 }
+function remEveryMonths(n) {
+  n = Number(n) || 1;
+  if (APP_LANG === 'en') return n === 1 ? 'every month' : 'every ' + n + ' months';
+  if (n === 1) return 'كل شهر';
+  if (n === 2) return 'كل شهرين';
+  if (n >= 3 && n <= 10) return 'كل ' + n + ' شهور';
+  return 'كل ' + n + ' شهرًا';
+}
 function remWeekday(i) { const w = (REM_I18N[APP_LANG] || REM_I18N.ar).weekdays; return w[i] || ''; }
 function remMonths() { return (REM_I18N[APP_LANG] || REM_I18N.ar).months; }
 function remT(key, vars) {
@@ -524,6 +590,14 @@ function _renderCustomRemindersList() {
           : remT('rec_left', { left: remDays(st.daysLeft), every: remEvery(st.interval) });
         const badgeClass = st.overdue ? 'rem-b-overdue' : st.dueToday ? 'rem-b-today' : 'rem-b-active';
         items.push({ r, doneToday: false, finished: false, overdue: st.overdue, sub, isRecurring: true, doneLabel: remT('btn_called'), badgeClass, sortDue: st.overdue ? -1 : st.daysLeft });
+      } else if (r.type === 'monthly') {
+        const st = _monthlyReminderStatus(r);
+        const ev = remEveryMonths(st.every);
+        const sub = st.overdue ? remT('mon_overdue', { date: st.nextDueKey })
+          : st.dueToday ? remT('mon_today', { every: ev })
+          : remT('mon_left', { left: remDays(st.daysLeft), date: st.nextDueKey, every: ev });
+        const badgeClass = st.overdue ? 'rem-b-overdue' : st.dueToday ? 'rem-b-today' : 'rem-b-active';
+        items.push({ r, doneToday: false, finished: false, overdue: st.overdue, sub, isRecurring: true, doneLabel: remT('btn_done'), badgeClass, sortDue: st.overdue ? -1 : st.daysLeft });
       } else if (r.type === 'weekly') {
         const st = _weeklyReminderStatus(r);
         const sub = st.doneToday
@@ -569,7 +643,7 @@ function _renderCustomRemindersList() {
   return items.map(({r,doneToday,finished,overdue,sub,isRecurring,doneLabel,badgeClass}) => `
     <div class="rem-card${overdue?' rem-overdue':''}${finished?' rem-finished':''}" id="rem-card-${esc(r.id)}">
       <div class="rem-card-body">
-        <div class="rem-card-title">${isRecurring?(r.type==='weekly'?'🗓️ ':'🔁 '):''}<span data-no-i18n>${esc(r.text)}</span></div>
+        <div class="rem-card-title">${isRecurring?((r.type==='weekly'||r.type==='monthly')?'🗓️ ':'🔁 '):''}<span data-no-i18n>${esc(r.text)}</span></div>
         <span class="rem-badge ${badgeClass}">${sub}</span>
       </div>
       ${!finished ? `<button onclick="event.stopPropagation();markReminderDoneToday('${r.id}')" class="rem-act-btn" style="background:${overdue?'#c0392b':'var(--accent2)'}">${doneLabel || remT('btn_done_today')}</button>` : ''}
@@ -8064,6 +8138,11 @@ function renderDueDropdownContent() {
         const progressText = st.overdue ? ' · ' + remT('due_missed') : ' · ' + remEvery(st.interval);
         const _dd = new Date(st.nextDueKey + 'T00:00:00');   // تاريخ الاستحقاق الفعلي (مش تاريخ النهاردة)
         items.push({ name: r.text, groupKey: 'reminder-'+r.id, type: remT('due_type') + progressText, day: _dd.getDate(), weekdayLbl: _remShortWd(_dd), amount: null, done: false, isIncome: false, custom: true, customId: r.id, daysUntilOverride: st.daysLeft, overdueOverride: st.overdue });
+      } else if (r.type === 'monthly') {
+        const st = _monthlyReminderStatus(r);
+        const progressText = st.overdue ? ' · ' + remT('due_missed') : ' · ' + remEveryMonths(st.every);
+        const _md = new Date(st.nextDueKey + 'T00:00:00');
+        items.push({ name: r.text, groupKey: 'reminder-'+r.id, type: remT('due_type') + progressText, day: _md.getDate(), weekdayLbl: _remShortWd(_md), amount: null, done: false, isIncome: false, custom: true, customId: r.id, daysUntilOverride: st.daysLeft, overdueOverride: st.overdue });
       } else if (r.type === 'weekly') {
         const st = _weeklyReminderStatus(r);
         const progressText = ' · ' + remT('due_every_weekday', { weekday: remWeekday(st.weekday) });
@@ -8363,6 +8442,9 @@ items.forEach(it => {
         if (r.active !== false && !(r.doneDates && r.doneDates[todayKeyForBadge])) { urgentCount++; urgentList.push({ name: r.text, du: 0, overdue: false }); }
       } else if (r.type === 'recurring') {
         const st = _recurringReminderStatus(r);
+        if (st.overdue || st.dueToday) { urgentCount++; urgentList.push({ name: r.text, du: 0, overdue: !!st.overdue }); }
+      } else if (r.type === 'monthly') {
+        const st = _monthlyReminderStatus(r);
         if (st.overdue || st.dueToday) { urgentCount++; urgentList.push({ name: r.text, du: 0, overdue: !!st.overdue }); }
       } else if (r.type === 'weekly') {
         const st = _weeklyReminderStatus(r);

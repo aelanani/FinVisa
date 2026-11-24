@@ -2356,7 +2356,7 @@ select:focus-visible, [tabindex]:focus-visible {
   text-align: center;
 }
 .rem-seg label:nth-child(odd) { border-inline-start: none; }
-.rem-seg label:nth-child(3), .rem-seg label:nth-child(4) { border-bottom: none; }
+.rem-seg label:nth-child(5), .rem-seg label:nth-child(6) { border-bottom: none; }
 .rem-seg label input { display: none; }
 .rem-seg label.active { background: var(--accent); color: #fff; }
 @media (max-width: 380px) {
