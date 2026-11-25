@@ -4179,3 +4179,29 @@ body.nav-open #uxKbdBtn, body.nav-open #uxQuickBtn, body.nav-open .fab-add { vis
 /* الدرج على الموبايل: يطلع من الشمال في الإنجليزي (ويقفل ناحية الشمال) */
 @media (max-width: 899.98px) { :root[dir="ltr"] .tabs { transform: translateX(-100%); } :root[dir="ltr"] body.nav-open .tabs { transform: none; } }
 .sy-bk { margin-top: 12px; } .sy-bk-t { font-size: .78rem; font-weight: 800; color: var(--text2); margin-bottom: 4px; }
+
+/* ═══ تذكيراتي: فلاتر + تعديل ═══ */
+.rem-filters { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px 0; }
+.rem-chip { border: 1.5px solid var(--border2); background: var(--surface); color: var(--text2); border-radius: 999px; padding: 7px 14px; font-size: 0.78rem; font-weight: 800; cursor: pointer; font-family: inherit; }
+.rem-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.rem-chip .rem-chip-n { opacity: 0.8; margin-inline-start: 4px; }
+.rem-edit-btn { background: none; border: none; cursor: pointer; font-size: 1rem; padding: 6px 8px; border-radius: 8px; color: var(--muted); }
+.rem-edit-btn:hover, .rem-edit-btn:active { color: var(--accent); background: rgba(37,99,235,0.1); }
+.rem-card.rem-editing { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
+.rem-cancel-btn { border: 1.5px solid var(--border2); background: var(--surface); color: var(--text2); border-radius: 12px; padding: 11px; font-weight: 800; font-family: inherit; cursor: pointer; }
+.rem-seg.rem-seg-locked label:not(.active) { opacity: 0.35; pointer-events: none; }
+.rem-seg.rem-seg-locked label.active { pointer-events: none; }
+
+/* ═══ تذكيراتي: مجموعات + تأجيل + تراجع ═══ */
+.rem-group { margin-bottom: 14px; }
+.rem-group-head { font-size: .72rem; font-weight: 800; color: var(--text2); padding: 6px 4px; border-bottom: 1px dashed var(--border); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+.rem-group-head.rem-group-toggle { cursor: pointer; }
+.rem-group-head.rem-g-overdue { color: #dc2626; }
+.rem-rec-badge { font-size: .8rem; margin-inline-end: 4px; cursor: help; }
+.rem-snooze-menu { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 12px; margin: -4px 0 10px; background: var(--bg); border: 1px dashed var(--border2); border-radius: 10px; font-size: .75rem; font-weight: 700; color: var(--muted); align-items: center; }
+.rem-snooze-menu button { border: 1.5px solid var(--border2); background: var(--surface); color: var(--text2); border-radius: 999px; padding: 5px 12px; font-weight: 800; font-family: inherit; font-size: .75rem; cursor: pointer; }
+.rem-snooze-menu button:active { background: var(--accent); color: #fff; }
+.rem-undo-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 10px 16px 0; padding: 9px 14px; background: #1f2937; color: #fff; border-radius: 10px; font-size: .8rem; font-weight: 700; }
+.rem-undo-bar button { background: none; border: none; color: #93c5fd; font-weight: 800; cursor: pointer; font-family: inherit; font-size: .8rem; }
+.rem-preview { font-size: .78rem; font-weight: 800; color: var(--accent); background: rgba(37,99,235,0.07); border-radius: 8px; padding: 8px 10px; }
+.rem-tab-badge { display: inline-block; min-width: 16px; padding: 0 5px; margin-inline-start: 4px; border-radius: 999px; background: #dc2626; color: #fff; font-size: .62rem; font-weight: 800; line-height: 16px; text-align: center; }

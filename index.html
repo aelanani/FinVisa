@@ -1573,7 +1573,7 @@ document.addEventListener('DOMContentLoaded', () => applyLanguage(APP_LANG));
       </div>
       <div class="section-body">
         <div style="padding:18px 16px;background:var(--bg);border-bottom:1px solid var(--border)">
-          <div style="font-size:0.85rem;font-weight:800;color:var(--text2);margin-bottom:12px">➕ إضافة تذكير جديد</div>
+          <div id="pgReminderFormTitle" style="font-size:0.85rem;font-weight:800;color:var(--text2);margin-bottom:12px">➕ إضافة تذكير جديد</div>
           <div style="display:flex;flex-direction:column;gap:12px;max-width:480px">
             <input id="pgReminderText" class="cell-input" placeholder="مثال: اسحب من كارت الأهلي" style="width:100%;font-size:0.95rem;padding:12px">
             <div class="rem-seg">
@@ -1598,7 +1598,7 @@ document.addEventListener('DOMContentLoaded', () => applyLanguage(APP_LANG));
             </div>
             <div id="pgReminderWeeklyFields" class="rem-cond-field" style="display:none">
               <span>كل يوم:</span>
-              <select id="pgReminderWeekday">
+              <select id="pgReminderWeekday" onchange="_updateReminderPreview()">
                 <option value="0">الأحد</option>
                 <option value="1">الاثنين</option>
                 <option value="2">الثلاثاء</option>
@@ -1610,32 +1610,34 @@ document.addEventListener('DOMContentLoaded', () => applyLanguage(APP_LANG));
             </div>
             <div id="pgReminderDailyFields" class="rem-cond-field">
               <span>لمدة (أيام):</span>
-              <input id="pgReminderDays" type="number" lang="en" min="1" placeholder="15">
+              <input id="pgReminderDays" type="number" lang="en" min="1" placeholder="15" oninput="_updateReminderPreview()" onchange="_updateReminderPreview()">
             </div>
             <div id="pgReminderOnceFields" class="rem-cond-field" style="display:none">
               <span>التاريخ:</span>
-              <input id="pgReminderDate" type="date">
+              <input id="pgReminderDate" type="date" oninput="_updateReminderPreview()" onchange="_updateReminderPreview()">
             </div>
             <div id="pgReminderRecurringFields" class="rem-cond-field" style="display:none">
               <span>التكرار كل (يوم):</span>
-              <input id="pgReminderInterval" type="number" lang="en" min="1" placeholder="80">
+              <input id="pgReminderInterval" type="number" lang="en" min="1" placeholder="80" oninput="_updateReminderPreview()" onchange="_updateReminderPreview()">
             </div>
             <div id="pgReminderAfterFields" class="rem-cond-field" style="display:none;flex-wrap:wrap">
               <span>بعد (يوم):</span>
-              <input id="pgReminderAfterDays" type="number" lang="en" min="1" placeholder="35" oninput="updatePgReminderAfterHint()">
+              <input id="pgReminderAfterDays" type="number" lang="en" min="1" placeholder="35" oninput="updatePgReminderAfterHint();_updateReminderPreview()">
               <span id="pgReminderAfterHint" style="font-size:0.72rem;color:var(--muted);font-weight:700"></span>
             </div>
             <div id="pgReminderMonthlyFields" class="rem-cond-field" style="display:none;flex-wrap:wrap">
               <span>كل (شهر):</span>
-              <input id="pgReminderMonthEvery" type="number" lang="en" min="1" placeholder="2" value="1" style="width:70px">
+              <input id="pgReminderMonthEvery" type="number" lang="en" min="1" placeholder="2" value="1" style="width:70px" oninput="_updateReminderPreview()" onchange="_updateReminderPreview()">
               <span>في يوم:</span>
-              <input id="pgReminderMonthDay" type="number" lang="en" min="1" max="31" placeholder="1" value="1" style="width:70px">
+              <input id="pgReminderMonthDay" type="number" lang="en" min="1" max="31" placeholder="1" value="1" style="width:70px" oninput="_updateReminderPreview()" onchange="_updateReminderPreview()">
               <span style="font-size:0.72rem;color:var(--muted);font-weight:700">من الشهر (1 = أول الشهر)</span>
             </div>
             <div id="pgReminderRecurringHint" style="display:none;font-size:0.72rem;color:var(--muted);font-weight:600;background:rgba(37,99,235,0.07);border-radius:8px;padding:8px 10px;line-height:1.6">
               💡 التذكير الدوري ميخلصش أبدًا — كل ما تدوس "✅ اتصلت"، العداد يبدأ من جديد تلقائيًا.
             </div>
-            <button onclick="addCustomReminderFromPage()" class="rem-add-btn">+ إضافة التذكير</button>
+            <div id="pgReminderPreview" class="rem-preview" style="display:none"></div>
+            <button id="pgReminderSubmitBtn" onclick="addCustomReminderFromPage()" class="rem-add-btn">+ إضافة التذكير</button>
+            <button id="pgReminderCancelEditBtn" onclick="cancelEditReminder()" class="rem-cancel-btn" style="display:none">✖ إلغاء التعديل</button>
           </div>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px 0">
@@ -1646,6 +1648,9 @@ document.addEventListener('DOMContentLoaded', () => applyLanguage(APP_LANG));
             <option value="newest">🆕 الأحدث</option>
           </select>
         </div>
+        <div style="padding:12px 16px 0"><input id="pgReminderSearch" class="cell-input" placeholder="🔍 ابحث في التذكيرات..." oninput="_remSearch=this.value;_refreshRemindersUI()" style="width:100%;font-size:0.85rem;padding:9px 12px"></div>
+        <div id="pgReminderFilters" class="rem-filters"></div>
+        <div id="pgReminderUndoBar" class="rem-undo-bar" style="display:none"></div>
         <div id="pgRemindersList" style="padding:14px 16px"></div>
       </div>
     </div>
@@ -1824,7 +1829,7 @@ document.addEventListener('DOMContentLoaded', () => applyLanguage(APP_LANG));
 
 <div class="toast" id="toast"></div>
 
-<script defer src="app-main.js?v=d686f57d"></script>
+<script defer src="app-main.js?v=6644c016"></script>
 
 <script defer src="theme-ui.js?v=051f32d4"></script>
 

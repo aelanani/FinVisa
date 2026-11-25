@@ -306,6 +306,130 @@ function updatePgReminderAfterHint() {
   const n = parseInt(inp.value);
   el.textContent = n > 0 ? '→ ' + _addDaysToKey(_todayKey(), n) : '';
 }
+// ═══ تعديل التذكيرات (نفس فورم الإضافة بيتملي بالبيانات، ونوع التذكير بيتقفل عشان التقدّم ميضيعش) ═══
+let _editingReminderId = null;
+let _remFilter = 'all';
+let _remSearch = '', _remFinishedOpen = false, _snoozeOpenId = null, _remUndo = null, _remUndoTimer = null;
+// ═══ تراجع: snapshot كامل للتذكيرات قبل أي حذف/تم/تأجيل ═══
+function _remPushUndo(label) {
+  try { _remUndo = { snap: JSON.stringify(customReminders || []), label }; } catch(e) { return; }
+  showRemUndoBar();
+  clearTimeout(_remUndoTimer);
+  _remUndoTimer = setTimeout(() => { _remUndo = null; showRemUndoBar(); }, 6000);
+}
+function showRemUndoBar() {
+  const el = document.getElementById('pgReminderUndoBar'); if (!el) return;
+  if (!_remUndo) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'flex';
+  el.innerHTML = '<span>' + _remUndo.label + '</span><button onclick="undoReminderChange()">↩️ تراجع</button>';
+}
+function undoReminderChange() {
+  if (!_remUndo) return;
+  try { customReminders = JSON.parse(_remUndo.snap); } catch(e) { return; }
+  _remUndo = null; clearTimeout(_remUndoTimer);
+  saveReminders(); _refreshRemindersUI(); showRemUndoBar();
+}
+function toggleSnoozeMenu(id) { _snoozeOpenId = (_snoozeOpenId === id) ? null : id; _refreshRemindersUI(); }
+function snoozeReminder(id, days) {
+  const r = (customReminders||[]).find(x => x.id === id); if (!r) return;
+  _remPushUndo('⏰ اتأجل ' + remDays(days));
+  const today = _todayKey();
+  const later = (a, b) => (a && a > b) ? a : b;
+  if (r.type === 'monthly') {
+    r.nextKey = _addDaysToKey(later(_monthlyReminderStatus(r).nextDueKey, today), days);
+  } else if (r.type === 'recurring') {
+    const st = _recurringReminderStatus(r);
+    const newNext = _addDaysToKey(later(st.nextDueKey, today), days);
+    r.lastDoneKey = _addDaysToKey(newNext, -st.interval);   // العداد يرجع بحيث الموعد الجاي = newNext
+  } else if (r.type === 'once' || !r.type) {
+    r.date = _addDaysToKey(later(r.date, today), days);
+    r.done = false;
+  }
+  _snoozeOpenId = null;
+  saveReminders(); _refreshRemindersUI();
+}
+// معاينة حيّة للموعد في الفورم
+function _updateReminderPreview() {
+  const el = document.getElementById('pgReminderPreview'); if (!el) return;
+  const type = (document.querySelector('input[name="pgReminderType"]:checked')||{}).value || 'daily';
+  const g = (id) => (document.getElementById(id)||{}).value;
+  let txt = '';
+  if (type === 'once') { const dv = g('pgReminderDate'); if (dv) txt = '📅 ' + dv; }
+  else if (type === 'after') { const n = parseInt(g('pgReminderAfterDays')) || 0; if (n > 0) txt = '📅 ' + _addDaysToKey(_todayKey(), n); }
+  else if (type === 'monthly') {
+    const d = Math.max(1, Math.min(31, parseInt(g('pgReminderMonthDay')) || 1));
+    const e = Math.max(1, parseInt(g('pgReminderMonthEvery')) || 1);
+    const first = _firstMonthlyKey(d);
+    txt = '📅 أول موعد: ' + first + ' ثم ' + remEveryMonths(e) + ' (' + _addMonthsKey(first, e, d) + ')';
+  } else if (type === 'recurring') { const n = parseInt(g('pgReminderInterval')) || 0; if (n > 0) txt = '📅 أول موعد: ' + _addDaysToKey(_todayKey(), n); }
+  else if (type === 'daily') { const n = parseInt(g('pgReminderDays')) || 0; if (n > 0) txt = '📅 من ' + _todayKey() + ' إلى ' + _addDaysToKey(_todayKey(), n - 1); }
+  else if (type === 'weekly') { const w = parseInt(g('pgReminderWeekday')); if (!isNaN(w)) txt = '📅 كل يوم ' + remWeekday(w); }
+  el.textContent = txt; el.style.display = txt ? '' : 'none';
+}
+function setReminderFilter(f) { _remFilter = f; _refreshRemindersUI(); }
+function _remVal(id, v) { const el = document.getElementById(id); if (el) el.value = v; }
+function startEditReminder(id) {
+  const r = (customReminders||[]).find(x => x.id === id);
+  if (!r) return;
+  _editingReminderId = id;
+  const type = r.type || 'once';
+  _remVal('pgReminderText', r.text || '');
+  const radio = document.querySelector('input[name="pgReminderType"][value="' + type + '"]');
+  if (radio) radio.checked = true;
+  if (type === 'daily') _remVal('pgReminderDays', r.totalDays || 1);
+  else if (type === 'once') _remVal('pgReminderDate', r.date || '');
+  else if (type === 'recurring') _remVal('pgReminderInterval', r.intervalDays || 80);
+  else if (type === 'weekly') _remVal('pgReminderWeekday', typeof r.weekday === 'number' ? r.weekday : 4);
+  else if (type === 'monthly') { _remVal('pgReminderMonthEvery', r.everyMonths || 1); _remVal('pgReminderMonthDay', r.monthDay || 1); }
+  togglePgReminderTypeUI();
+  const seg = document.querySelector('.rem-seg'); if (seg) seg.classList.add('rem-seg-locked');
+  const t = document.getElementById('pgReminderFormTitle'); if (t) t.textContent = '✏️ تعديل التذكير';
+  const b = document.getElementById('pgReminderSubmitBtn'); if (b) b.textContent = '💾 حفظ التعديل';
+  const c = document.getElementById('pgReminderCancelEditBtn'); if (c) c.style.display = '';
+  try { _updateReminderPreview(); } catch(e) {}
+  _refreshRemindersUI();
+  const form = document.getElementById('pgReminderFormTitle');
+  if (form && form.scrollIntoView) form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const te = document.getElementById('pgReminderText'); if (te) te.focus();
+}
+function _resetReminderForm() {
+  _editingReminderId = null;
+  ['pgReminderText','pgReminderDays','pgReminderDate','pgReminderInterval','pgReminderAfterDays'].forEach(i => _remVal(i, ''));
+  _remVal('pgReminderMonthEvery', 1); _remVal('pgReminderMonthDay', 1);
+  const seg = document.querySelector('.rem-seg'); if (seg) seg.classList.remove('rem-seg-locked');
+  const t = document.getElementById('pgReminderFormTitle'); if (t) t.textContent = '➕ إضافة تذكير جديد';
+  const b = document.getElementById('pgReminderSubmitBtn'); if (b) b.textContent = '+ إضافة التذكير';
+  const c = document.getElementById('pgReminderCancelEditBtn'); if (c) c.style.display = 'none';
+  try { updatePgReminderAfterHint(); _updateReminderPreview(); } catch(e) {}
+}
+function cancelEditReminder() { _resetReminderForm(); _refreshRemindersUI(); }
+function _saveReminderEdit(text) {
+  const r = (customReminders||[]).find(x => x.id === _editingReminderId);
+  if (!r) { _resetReminderForm(); return; }
+  const num = (id, def, min, max) => { const v = parseInt((document.getElementById(id)||{}).value); return Math.max(min, Math.min(max, isNaN(v) ? def : v)); };
+  r.text = text;
+  if (r.type === 'daily') {
+    r.totalDays = num('pgReminderDays', r.totalDays || 1, 1, 100000);
+    const doneCount = Object.keys(r.doneDates || {}).length;
+    r.active = doneCount < r.totalDays;   // لو زوّد الأيام يرجع نشط
+  } else if (r.type === 'recurring') {
+    r.intervalDays = num('pgReminderInterval', r.intervalDays || 80, 1, 100000);
+  } else if (r.type === 'weekly') {
+    r.weekday = num('pgReminderWeekday', r.weekday ?? 4, 0, 6);
+  } else if (r.type === 'monthly') {
+    const every = num('pgReminderMonthEvery', r.everyMonths || 1, 1, 120), day = num('pgReminderMonthDay', r.monthDay || 1, 1, 31);
+    if (day !== r.monthDay) r.nextKey = _firstMonthlyKey(day);   // غيّر اليوم → نحسب الموعد الجاي من جديد
+    r.everyMonths = every; r.monthDay = day;
+  } else {
+    const dv = (document.getElementById('pgReminderDate')||{}).value;
+    if (!dv) { document.getElementById('pgReminderDate').focus(); return; }
+    r.date = dv; r.done = false; r.type = 'once';
+  }
+  _resetReminderForm();
+  saveReminders();
+  _refreshRemindersUI();
+  try { toast('✅ تم حفظ التعديل'); } catch(e) {}
+}
 function addCustomReminderFromPage() {
   try {
     const textEl = document.getElementById('pgReminderText');
@@ -315,6 +439,7 @@ function addCustomReminderFromPage() {
     const intervalEl = document.getElementById('pgReminderInterval');
     const text = (textEl.value || '').trim();
     if (!text) { textEl.focus(); return; }
+    if (_editingReminderId) { _saveReminderEdit(text); return; }
     const type = typeEl ? typeEl.value : 'daily';
     if (type === 'daily') {
       const days = Math.max(1, parseInt(daysEl.value) || 1);
@@ -359,6 +484,7 @@ function markReminderDoneToday(id) {
   try {
     const r = customReminders.find(x => x.id === id);
     if (!r) return;
+    _remPushUndo('✅ تم: ' + String(r.text).slice(0, 30));
     let autoDelete = false;
     if (r.type === 'daily') {
       if (!r.doneDates || typeof r.doneDates !== 'object') r.doneDates = {};
@@ -387,6 +513,8 @@ function markReminderDoneToday(id) {
   _refreshRemindersUI();
 }
 function deleteCustomReminder(id) {
+  if (_editingReminderId === id) _resetReminderForm();
+  { const rr = (customReminders||[]).find(x => x.id === id); _remPushUndo('🗑️ اتحذف: ' + (rr ? String(rr.text).slice(0, 30) : '')); }
   try { customReminders = customReminders.filter(x => x.id !== id); } catch(e) { console.error(e); }
   saveReminders();
   _refreshRemindersUI();
@@ -399,6 +527,7 @@ function togglePgReminderTypeUI() {
   document.getElementById('pgReminderRecurringFields').style.display = type === 'recurring' ? 'flex' : 'none';
   document.getElementById('pgReminderRecurringHint').style.display = type === 'recurring' ? 'block' : 'none';
   document.getElementById('pgReminderWeeklyFields').style.display = type === 'weekly' ? 'flex' : 'none';
+  try { _updateReminderPreview(); } catch(e) {}
   document.getElementById('pgReminderAfterFields').style.display = type === 'after' ? 'flex' : 'none';
   document.getElementById('pgReminderMonthlyFields').style.display = type === 'monthly' ? 'flex' : 'none';
   // بنلوّن زرار الـ segmented control النشط يدويًا (بدل الاعتماد على :has() اللي مش مدعوم
@@ -567,6 +696,24 @@ function _refreshRemindersUI() {
     if (dd && dd.style.display !== 'none') renderDueDropdownContent();
   } catch(e) { console.error('due dropdown refresh error:', e); }
   try { if (typeof updateDueNotifBadge === 'function') updateDueNotifBadge(); } catch(e) {}
+  try { _updateRemindersTabBadge(); } catch(e) {}
+}
+function _updateRemindersTabBadge() {
+  const tab = document.querySelector('.tab[data-page="reminders"]'); if (!tab) return;
+  let b = tab.querySelector('.rem-tab-badge');
+  if (!b) { b = document.createElement('span'); b.className = 'rem-tab-badge'; tab.appendChild(b); }
+  const today = _todayKey();
+  const n = (customReminders||[]).filter(r => {
+    try {
+      if (!r) return false;
+      if (r.type === 'daily') { const st = _dailyReminderStatus(r); return !st.finished && !st.doneToday; }
+      if (r.type === 'recurring') { const st = _recurringReminderStatus(r); return st.overdue || st.dueToday; }
+      if (r.type === 'weekly') return _weeklyReminderStatus(r).dueToday;
+      if (r.type === 'monthly') { const st = _monthlyReminderStatus(r); return st.overdue || st.dueToday; }
+      return !r.done && r.date && r.date <= today;
+    } catch(e) { return false; }
+  }).length;
+  b.textContent = n || ''; b.style.display = n ? '' : 'none';
 }
 function _renderCustomRemindersList() {
   const todayKey = _todayKey();
@@ -624,7 +771,20 @@ function _renderCustomRemindersList() {
       }
     } catch(e) { console.error('reminder item skipped due to error:', e, r); }
   });
+  // فلاتر: الكل / يحتاج انتباه (متأخر أو النهاردة) / قادمة — مع العدّاد
+  const _isAttn = (it) => !it.finished && (it.overdue || it.badgeClass === 'rem-b-today');
+  const nAttn = items.filter(_isAttn).length, nAll = items.length;
+  const fbar = document.getElementById('pgReminderFilters');
+  if (fbar) {
+    const chip = (k, label, n) => `<button class="rem-chip${_remFilter===k?' active':''}" onclick="setReminderFilter('${k}')">${label}<span class="rem-chip-n">${n}</span></button>`;
+    fbar.innerHTML = chip('all', 'الكل', nAll) + chip('attention', '⚠️ يحتاج انتباه', nAttn) + chip('upcoming', '🔵 قادمة', nAll - nAttn);
+  }
   if (!items.length) return '<div style="text-align:center;padding:18px 10px;color:var(--muted);font-size:0.8rem">' + remT('empty') + '</div>';
+  if (_remFilter === 'attention') { for (let i = items.length - 1; i >= 0; i--) if (!_isAttn(items[i])) items.splice(i, 1); }
+  else if (_remFilter === 'upcoming') { for (let i = items.length - 1; i >= 0; i--) if (_isAttn(items[i])) items.splice(i, 1); }
+  const q = (_remSearch || '').trim().toLowerCase();
+  if (q) { for (let i = items.length - 1; i >= 0; i--) if (!String(items[i].r.text || '').toLowerCase().includes(q)) items.splice(i, 1); }
+  if (!items.length) return '<div style="text-align:center;padding:18px 10px;color:var(--muted);font-size:0.8rem">مفيش تذكيرات في الفلتر ده 👌</div>';
   // ترتيب القايمة حسب الاختيار: الأقرب أولاً (افتراضي) / النشط أولاً / الأحدث
   const sortSel = document.getElementById('pgReminderSort');
   const sortMode = sortSel ? sortSel.value : 'due';
@@ -640,16 +800,39 @@ function _renderCustomRemindersList() {
   } else {
     items.sort((a, b) => (a.sortDue ?? 999) - (b.sortDue ?? 999));
   }
-  return items.map(({r,doneToday,finished,overdue,sub,isRecurring,doneLabel,badgeClass}) => `
-    <div class="rem-card${overdue?' rem-overdue':''}${finished?' rem-finished':''}" id="rem-card-${esc(r.id)}">
+  const canSnooze = (r) => r.type === 'once' || r.type === 'monthly' || r.type === 'recurring' || !r.type;
+  const cardHtml = ({r,doneToday,finished,overdue,sub,isRecurring,doneLabel,badgeClass}) => `
+    <div class="rem-card${overdue?' rem-overdue':''}${finished?' rem-finished':''}${_editingReminderId===r.id?' rem-editing':''}" id="rem-card-${esc(r.id)}">
       <div class="rem-card-body">
-        <div class="rem-card-title">${isRecurring?((r.type==='weekly'||r.type==='monthly')?'🗓️ ':'🔁 '):''}<span data-no-i18n>${esc(r.text)}</span></div>
+        <div class="rem-card-title">${isRecurring ? '<span class="rem-rec-badge" title="متكرر — مش بيتشال بعد تم">🔄</span>' : ''}${isRecurring?((r.type==='weekly'||r.type==='monthly')?'🗓️ ':'🔁 '):''}<span data-no-i18n>${esc(r.text)}</span></div>
         <span class="rem-badge ${badgeClass}">${sub}</span>
       </div>
       ${!finished ? `<button onclick="event.stopPropagation();markReminderDoneToday('${r.id}')" class="rem-act-btn" style="background:${overdue?'#c0392b':'var(--accent2)'}">${doneLabel || remT('btn_done_today')}</button>` : ''}
+      ${!finished && canSnooze(r) ? `<button onclick="event.stopPropagation();toggleSnoozeMenu('${r.id}')" class="rem-edit-btn" title="تأجيل">⏰</button>` : ''}
+      <button onclick="event.stopPropagation();startEditReminder('${r.id}')" class="rem-edit-btn" title="تعديل">✏️</button>
       <button onclick="event.stopPropagation();deleteCustomReminder('${r.id}')" class="rem-del-btn">🗑️</button>
     </div>
-  `).join('');
+    ${_snoozeOpenId === r.id ? `<div class="rem-snooze-menu"><span>⏰ أجّل:</span><button onclick="snoozeReminder('${r.id}',1)">يوم</button><button onclick="snoozeReminder('${r.id}',3)">3 أيام</button><button onclick="snoozeReminder('${r.id}',7)">أسبوع</button><button onclick="snoozeReminder('${r.id}',30)">شهر</button></div>` : ''}
+  `;
+  // تجميع بصري: متأخر / النهاردة / خلال أسبوع / لاحقًا / خلصت
+  const groups = { overdue: [], today: [], week: [], later: [], finished: [] };
+  items.forEach(it => {
+    if (it.finished) groups.finished.push(it);
+    else if (it.overdue) groups.overdue.push(it);
+    else if (it.badgeClass === 'rem-b-today') groups.today.push(it);
+    else if ((it.sortDue ?? 999) <= 7) groups.week.push(it);
+    else groups.later.push(it);
+  });
+  const defs = [['overdue','🔴 متأخر','rem-g-overdue'],['today','📌 النهاردة',''],['week','🗓️ خلال أسبوع',''],['later','🔵 لاحقًا','']];
+  let html = '';
+  defs.forEach(([k, label, cls]) => {
+    if (!groups[k].length) return;
+    html += `<div class="rem-group"><div class="rem-group-head ${cls}"><span>${label}</span><span>${groups[k].length}</span></div>${groups[k].map(cardHtml).join('')}</div>`;
+  });
+  if (groups.finished.length) {
+    html += `<div class="rem-group"><div class="rem-group-head rem-group-toggle" onclick="_remFinishedOpen=!_remFinishedOpen;_refreshRemindersUI()"><span>✅ خلص مؤخرًا (${groups.finished.length})</span><span>${_remFinishedOpen?'▲':'▼'}</span></div>${_remFinishedOpen ? groups.finished.map(cardHtml).join('') : ''}</div>`;
+  }
+  return html;
 }
 
 function loadState() {
